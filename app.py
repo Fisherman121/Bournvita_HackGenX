@@ -190,6 +190,10 @@ def generate_frames():
 
 @app.route('/')
 def index():
+    return render_template('index.html')
+
+@app.route('/api_test')
+def api_test():
     return send_from_directory('static', 'test_api.html')
 
 @app.route('/video_feed')

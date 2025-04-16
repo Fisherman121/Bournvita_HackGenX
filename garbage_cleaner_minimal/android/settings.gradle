@@ -1,0 +1,15 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+include ':app'
+
+// This file configures the Gradle build system for Flutter projects.
+// It's maintained by the Flutter team and is generated automatically.
+// DO NOT modify this file directly, as it may be regenerated.
+
+apply from: "${System.getenv('FLUTTER_ROOT') ?: '../../../flutter'}/packages/flutter_tools/gradle/app_plugin_loader.gradle" 

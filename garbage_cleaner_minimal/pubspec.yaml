@@ -1,0 +1,35 @@
+name: garbage_cleaner_minimal
+description: A mobile app for logging and cleaning garbage detections.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=2.19.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  http: ^1.1.0
+  shared_preferences: ^2.2.0
+  path_provider: ^2.1.1
+  intl: ^0.18.1
+  connectivity_plus: ^5.0.1
+  image_picker: ^1.0.4
+  geolocator: ^10.1.0
+  flutter_local_notifications: ^16.1.0
+  workmanager: ^0.5.2
+  provider: ^6.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/ 

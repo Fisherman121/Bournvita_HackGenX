@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flask Server Connection Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flask Server Connection Test</h1>
+    
+    <p>This page confirms the Flask server is running and accessible!</p>
+    
+    <p>If you can see this page, your server is correctly configured and accessible from this device.</p>
+    
+    <div>
+        <h2>API Test</h2>
+        <button onclick="testApi()">Test API Endpoint</button>
+        <div id="apiResult"></div>
+    </div>
+    
+    <script>
+        function testApi() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = "Testing API...";
+            
+            fetch('/api_check')
+                .then(response => response.json())
+                .then(data => {
+                    resultDiv.innerHTML = `<p class="success">✅ API is working!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+                });
+        }
+        
+        // Test API on page load
+        window.onload = testApi;
+    </script>
+</body>
+</html> 

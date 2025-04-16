@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garbage Detection System</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .detection-card {
+            transition: all 0.3s ease;
+            background: linear-gradient(145deg, #ffffff, #f0f0f0);
+        }
+        .detection-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .drop-zone {
+            border: 2px dashed #4CAF50;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: rgba(76, 175, 80, 0.05);
+        }
+        .drop-zone.dragover {
+            background-color: rgba(76, 175, 80, 0.1);
+            border-color: #45a049;
+            transform: scale(1.02);
+        }
+        .webcam-container {
+            position: relative;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .webcam-controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+        .processing-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            border-radius: 15px;
+        }
+        .progress-bar {
+            width: 80%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .video-container {
+            position: relative;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .video-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .nav-button::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: #4CAF50;
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+        .nav-button.active::after {
+            transform: scaleX(1);
+        }
+        .video-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+        .buffering-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #4CAF50;
+            animation: spin 1s ease-in-out infinite;
+            z-index: 10;
+        }
+        @keyframes spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-800">Garbage Detection System</h1>
+                        <p class="mt-2 text-gray-600">AI-powered waste detection and classification</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">Live</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Tabs -->
+            <div class="bg-white rounded-xl shadow-sm p-4 mb-8">
+                <div class="flex space-x-8">
+                    <button onclick="switchTab('webcam')" class="nav-button px-4 py-2 text-gray-700 font-medium active">
+                        <i class="fas fa-video mr-2"></i>Webcam Detection
+                    </button>
+                    <button onclick="switchTab('video')" class="nav-button px-4 py-2 text-gray-700 font-medium">
+                        <i class="fas fa-film mr-2"></i>Video Detection
+                    </button>
+                    <button onclick="switchTab('photo')" class="nav-button px-4 py-2 text-gray-700 font-medium">
+                        <i class="fas fa-image mr-2"></i>Photo Detection
+                    </button>
+                    <button onclick="switchTab('logs')" class="nav-button px-4 py-2 text-gray-700 font-medium">
+                        <i class="fas fa-clipboard-list mr-2"></i>Detection Logs
+                    </button>
+                </div>
+            </div>
+
+            <!-- Webcam Tab -->
+            <div id="webcam" class="tab-content active">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h2 class="text-xl font-semibold mb-4 text-gray-800">Live Webcam Feed</h2>
+                        <div class="webcam-container aspect-w-16 aspect-h-9">
+                            <img id="webcamFeed" src="" class="w-full h-full object-cover" alt="Camera Feed">
+                            <div class="webcam-controls">
+                                <button id="startWebcam" class="bg-green-600 text-white px-6 py-3 rounded-lg mr-4 hover:bg-green-700 transition shadow-md">
+                                    <i class="fas fa-play mr-2"></i>Start Detection
+                                </button>
+                                <button id="stopWebcam" class="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition shadow-md" disabled>
+                                    <i class="fas fa-stop mr-2"></i>Stop Detection
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-8 flex justify-end">
+                            <button onclick="switchTab('logs')" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition shadow-md">
+                                <i class="fas fa-clipboard-list mr-2"></i>View Detection Logs
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h2 class="text-xl font-semibold mb-4 text-gray-800">Recent Detections</h2>
+                        <div id="recentDetections" class="space-y-4 max-h-[600px] overflow-y-auto">
+                            <!-- Recent detections will be populated here -->
+                            <p class="text-gray-500 text-center py-4">No recent detections</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab (New) -->
+            <div id="logs-tab" class="tab-content">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Detection Logs</h2>
+                    <div id="logs-container" class="space-y-4 max-h-[600px] overflow-y-auto">
+                        <!-- Logs will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Video Tab -->
+            <div id="video" class="tab-content">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Video Detection</h2>
+                    <div class="drop-zone mb-6" id="videoDropZone">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-green-600 mb-4"></i>
+                        <p class="text-gray-600 mb-2">Drag and drop a video file here</p>
+                        <p class="text-sm text-gray-500 mb-4">or</p>
+                        <input type="file" id="videoInput" accept="video/*" class="hidden">
+                        <button onclick="document.getElementById('videoInput').click()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition">
+                            <i class="fas fa-folder-open mr-2"></i>Select Video
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="video-container">
+                            <div class="video-label">Original Video</div>
+                            <video id="videoPlayer" controls class="w-full h-full object-cover hidden"></video>
+                        </div>
+                        <div class="video-container">
+                            <div class="video-label">Processed Video</div>
+                            <video id="processedVideoPlayer" controls class="w-full h-full object-cover hidden" controlsList="nodownload">
+                                <!-- Remove the source tag and set the src attribute directly on the video element -->
+                            </video>
+                            <div id="videoProcessing" class="buffering-spinner hidden"></div>
+                            <div class="video-controls">
+                                <button id="downloadProcessedVideo" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition hidden">
+                                    <i class="fas fa-download mr-2"></i>Download Processed Video
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Photo Tab -->
+            <div id="photo" class="tab-content">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Photo Detection</h2>
+                    <div class="drop-zone mb-6" id="photoDropZone">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-green-600 mb-4"></i>
+                        <p class="text-gray-600 mb-2">Drag and drop an image here</p>
+                        <p class="text-sm text-gray-500 mb-4">or</p>
+                        <input type="file" id="photoInput" accept="image/*" class="hidden">
+                        <button onclick="document.getElementById('photoInput').click()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition">
+                            <i class="fas fa-folder-open mr-2"></i>Select Photo
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="video-container">
+                            <div class="video-label">Original Image</div>
+                            <img id="photoPreview" class="w-full h-full object-cover hidden" alt="Photo Preview">
+                        </div>
+                        <div class="video-container">
+                            <div class="video-label">Processed Image</div>
+                            <img id="processedPhotoPreview" class="w-full h-full object-cover hidden" alt="Processed Photo">
+                            <div id="photoProcessing" class="buffering-spinner hidden"></div>
+                            <div class="video-controls">
+                                <button id="downloadProcessedPhoto" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition hidden">
+                                    <i class="fas fa-download mr-2"></i>Download Processed Image
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+    <script>
+        // Function to format timestamp
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        // Function to create a log card
+        function createLogCard(log) {
+            return `
+                <div class="detection-card p-4 rounded-lg border border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold text-green-600">${log.class}</span>
+                        <span class="text-sm text-gray-500">${formatTimestamp(log.timestamp)}</span>
+                    </div>
+                    <div class="mt-2">
+                        <span class="text-sm text-gray-600">Confidence: ${(log.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Function to update logs
+        function updateLogs() {
+            fetch('/get_logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logsContainer = document.getElementById('logs-container');
+                    logsContainer.innerHTML = '';
+                    
+                    if (data.length === 0) {
+                        logsContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No detections yet</p>';
+                        return;
+                    }
+                    
+                    // Only show logs marked for cleaning
+                    const cleaningLogs = data.filter(log => log.forCleaning);
+                    
+                    if (cleaningLogs.length === 0) {
+                        logsContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No cleaning tasks yet</p>';
+                        return;
+                    }
+                    
+                    cleaningLogs.forEach(log => {
+                        const logItem = document.createElement('div');
+                        logItem.className = 'detection-card bg-white p-4 rounded-lg shadow-sm';
+                        
+                        // Fix image path display
+                        const imagePath = log.image_path ? ('/' + log.image_path) : '';
+                        
+                        logItem.innerHTML = `
+                            <div class="flex items-center">
+                                <div class="w-20 h-20 mr-4 overflow-hidden rounded-lg">
+                                    <img src="${imagePath}" class="w-full h-full object-cover" alt="Detection" onerror="this.src='https://via.placeholder.com/150?text=No+Image'">
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-gray-800">${log.class}</h3>
+                                    <p class="text-sm text-gray-600">Confidence: ${log.confidence}</p>
+                                    <p class="text-xs text-gray-500">Time: ${log.timestamp}</p>
+                                    <div class="mt-2 flex items-center">
+                                        <label class="inline-flex items-center">
+                                            <input type="checkbox" class="form-checkbox h-4 w-4 text-green-600" 
+                                                   ${log.status === 'cleaned' ? 'checked' : ''}
+                                                   onchange="updateStatus('${log.timestamp}', this.checked ? 'cleaned' : 'pending')">
+                                            <span class="ml-2 text-sm text-gray-700">Cleaned</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        logsContainer.appendChild(logItem);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                });
+        }
+
+        // Function to update the status of a detection
+        function updateStatus(timestamp, status) {
+            fetch('/update_status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    timestamp: timestamp,
+                    status: status
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Status updated:', data);
+            })
+            .catch((error) => {
+                console.error('Error updating status:', error);
+            });
+        }
+
+        // Function to switch tabs
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            if (tabName === 'logs') {
+                document.getElementById('logs-tab').classList.add('active');
+            } else {
+                document.getElementById(tabName).classList.add('active');
+            }
+            
+            // Update tab buttons
+            document.querySelectorAll('.nav-button').forEach(button => {
+                button.classList.remove('active', 'text-green-600');
+                button.classList.add('text-gray-700');
+            });
+            
+            // Highlight selected tab button
+            const selectedButton = document.querySelector(`[onclick="switchTab('${tabName}')"]`);
+            selectedButton.classList.remove('text-gray-700');
+            selectedButton.classList.add('active', 'text-green-600');
+            
+            // Refresh logs if logs tab is selected
+            if (tabName === 'logs') {
+                updateLogs();
+            }
+        }
+
+        // Webcam controls
+        let webcamActive = false;
+        const webcamFeed = document.getElementById('webcamFeed');
+        const startWebcam = document.getElementById('startWebcam');
+        const stopWebcam = document.getElementById('stopWebcam');
+
+        // Don't initialize webcam feed on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Setup webcam start/stop buttons
+            const startWebcamBtn = document.getElementById('startWebcam');
+            const stopWebcamBtn = document.getElementById('stopWebcam');
+            const webcamFeed = document.getElementById('webcamFeed');
+            
+            startWebcamBtn.addEventListener('click', function() {
+                // Set the src attribute to the video feed URL
+                webcamFeed.src = "/video_feed";
+                webcamFeed.style.display = 'block';
+                
+                // Toggle button states
+                startWebcamBtn.disabled = true;
+                stopWebcamBtn.disabled = false;
+                
+                // Start fetching detections more frequently during webcam use
+                fetchDetections();
+                const detectionInterval = setInterval(fetchDetections, 3000);
+                webcamFeed.setAttribute('data-interval', detectionInterval);
+            });
+            
+            stopWebcamBtn.addEventListener('click', function() {
+                // Clear the webcam feed source
+                webcamFeed.src = "";
+                
+                // Toggle button states
+                startWebcamBtn.disabled = false;
+                stopWebcamBtn.disabled = true;
+                
+                // Clear the detection interval
+                const detectionInterval = webcamFeed.getAttribute('data-interval');
+                if (detectionInterval) {
+                    clearInterval(parseInt(detectionInterval));
+                }
+            });
+            
+            // Just fetch detections for the recent lists
+            fetchDetections();
+            setInterval(fetchDetections, 5000);
+        });
+
+        // Drag and drop functionality
+        function setupDropZone(dropZone, inputElement, previewElement, processingElement) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    inputElement.files = e.dataTransfer.files;
+                    handleFileUpload(file, previewElement, processingElement);
+                }
+            });
+        }
+
+        function handleFileUpload(file, previewElement, processingElement) {
+            const url = URL.createObjectURL(file);
+            
+            if (file.type.startsWith('video/')) {
+                // Show original video
+                const videoPlayer = document.getElementById('videoPlayer');
+                videoPlayer.src = url;
+                videoPlayer.classList.remove('hidden');
+                
+                // Show buffering spinner
+                const processingElement = document.getElementById('videoProcessing');
+                processingElement.classList.remove('hidden');
+                
+                // Process video
+                const formData = new FormData();
+                formData.append('video', file);
+                
+                fetch('/process_video', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    processingElement.classList.add('hidden');
+                    
+                    // Show processed video - fix for video display
+                    const processedVideo = document.getElementById('processedVideoPlayer');
+                    processedVideo.classList.remove('hidden');
+                    
+                    // Direct source to the processed file path
+                    if (data.processed_path) {
+                        processedVideo.src = '/' + data.processed_path.replace(/\\/g, '/');
+                        processedVideo.load();
+                    }
+                    
+                    // Show download button
+                    const downloadButton = document.getElementById('downloadProcessedVideo');
+                    downloadButton.classList.remove('hidden');
+                    downloadButton.onclick = () => {
+                        // Extract filename from path
+                        const filename = data.processed_path.split(/[\/\\]/).pop();
+                        window.location.href = `/download_video/${filename}`;
+                    };
+                    
+                    updateLogs();
+                })
+                .catch(error => {
+                    console.error('Error processing video:', error);
+                    processingElement.classList.add('hidden');
+                });
+            } else if (file.type.startsWith('image/')) {
+                // Show original image
+                const photoPreview = document.getElementById('photoPreview');
+                photoPreview.src = url;
+                photoPreview.classList.remove('hidden');
+                
+                // Show buffering spinner
+                const processingElement = document.getElementById('photoProcessing');
+                processingElement.classList.remove('hidden');
+                
+                // Process photo
+                const formData = new FormData();
+                formData.append('photo', file);
+                
+                fetch('/process_photo', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    processingElement.classList.add('hidden');
+                    
+                    // Show processed image - fix for image display
+                    const processedPhoto = document.getElementById('processedPhotoPreview');
+                    if (data.processed_path) {
+                        processedPhoto.src = '/' + data.processed_path.replace(/\\/g, '/');
+                        processedPhoto.classList.remove('hidden');
+                    }
+                    
+                    // Show download button
+                    const downloadButton = document.getElementById('downloadProcessedPhoto');
+                    downloadButton.classList.remove('hidden');
+                    downloadButton.onclick = () => {
+                        // Extract filename from path
+                        const filename = data.processed_path.split(/[\/\\]/).pop();
+                        window.location.href = `/download_photo/${filename}`;
+                    };
+                    
+                    updateLogs();
+                })
+                .catch(error => {
+                    console.error('Error processing photo:', error);
+                    processingElement.classList.add('hidden');
+                });
+            }
+        }
+
+        // Setup drop zones
+        setupDropZone(
+            document.getElementById('videoDropZone'),
+            document.getElementById('videoInput'),
+            document.getElementById('videoPlayer'),
+            document.getElementById('videoProcessing')
+        );
+
+        setupDropZone(
+            document.getElementById('photoDropZone'),
+            document.getElementById('photoInput'),
+            document.getElementById('photoPreview'),
+            document.getElementById('photoProcessing')
+        );
+
+        // Handle file inputs
+        document.getElementById('videoInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                handleFileUpload(file, document.getElementById('videoPlayer'), document.getElementById('videoProcessing'));
+            }
+        });
+
+        document.getElementById('photoInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                handleFileUpload(file, document.getElementById('photoPreview'), document.getElementById('photoProcessing'));
+            }
+        });
+
+        // Update logs every 5 seconds
+        setInterval(updateLogs, 5000);
+        updateLogs(); // Initial update
+
+        // Function to fetch and display detections
+        function fetchDetections() {
+            fetch('/get_detections')
+                .then(response => response.json())
+                .then(data => {
+                    // Update recent detections
+                    const recentDetections = document.getElementById('recentDetections');
+                    
+                    // Clear previous content if empty
+                    if (recentDetections.querySelector('p')) {
+                        recentDetections.innerHTML = '';
+                    }
+                    
+                    // Display the 10 most recent detections only
+                    const recentItems = data.slice(0, 10);
+                    
+                    if (recentItems.length === 0) {
+                        recentDetections.innerHTML = '<p class="text-gray-500 text-center py-4">No recent detections</p>';
+                        return;
+                    }
+                    
+                    // Clear existing detections and repopulate
+                    recentDetections.innerHTML = '';
+                    
+                    recentItems.forEach(detection => {
+                        // Create detection card using processDetection helper
+                        const imagePath = detection.image_path ? ('/' + detection.image_path) : '';
+                        
+                        const detectionItem = document.createElement('div');
+                        detectionItem.className = 'detection-card bg-white p-4 rounded-lg shadow-sm';
+                        
+                        detectionItem.innerHTML = `
+                            <div class="flex items-center">
+                                <div class="w-20 h-20 mr-4 overflow-hidden rounded-lg">
+                                    <img src="${imagePath}" class="w-full h-full object-cover" alt="Detection" onerror="this.src='https://via.placeholder.com/150?text=No+Image'">
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-gray-800">${detection.class}</h3>
+                                    <p class="text-sm text-gray-600">Confidence: ${detection.confidence}</p>
+                                    <p class="text-xs text-gray-500">Time: ${detection.timestamp}</p>
+                                </div>
+                            </div>
+                        `;
+                        
+                        recentDetections.appendChild(detectionItem);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching detections:', error);
+                });
+        }
+
+        // Function to update detection status
+        function updateStatus(timestamp, status) {
+            fetch('/update_status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    timestamp: timestamp,
+                    status: status
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const statusElement = document.querySelector(`#status-${timestamp}`).parentElement.previousElementSibling;
+                    statusElement.className = `badge bg-${status === 'cleaned' ? 'success' : 'warning'} me-2`;
+                    statusElement.innerText = status === 'cleaned' ? 'Cleaned' : 'Pending';
+                }
+            })
+            .catch(error => {
+                console.error('Error updating status:', error);
+            });
+        }
+
+        // Throttle detections to be logged only once per minute
+        let lastDetectionTime = 0;
+        const DETECTION_THROTTLE_MS = 60000; // 1 minute
+        
+        // Function to process frame with detection throttling
+        function processDetection(detection) {
+            // Add to recent detections immediately
+            const recentDetections = document.getElementById('recentDetections');
+            const detectionItem = document.createElement('div');
+            detectionItem.className = 'detection-card bg-white p-4 rounded-lg shadow-sm';
+            
+            // Similar to updateLogs but for recent detections only
+            const imagePath = detection.image_path ? ('/' + detection.image_path) : '';
+            
+            detectionItem.innerHTML = `
+                <div class="flex items-center">
+                    <div class="w-20 h-20 mr-4 overflow-hidden rounded-lg">
+                        <img src="${imagePath}" class="w-full h-full object-cover" alt="Detection" onerror="this.src='https://via.placeholder.com/150?text=No+Image'">
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-gray-800">${detection.class}</h3>
+                        <p class="text-sm text-gray-600">Confidence: ${detection.confidence}</p>
+                        <p class="text-xs text-gray-500">Time: ${detection.timestamp}</p>
+                    </div>
+                </div>
+            `;
+            
+            // Only keep the most recent 10 detections in the UI
+            if (recentDetections.children.length >= 10) {
+                recentDetections.removeChild(recentDetections.lastChild);
+            }
+            
+            // Add new detection at the top
+            if (recentDetections.firstChild) {
+                recentDetections.insertBefore(detectionItem, recentDetections.firstChild);
+            } else {
+                recentDetections.innerHTML = '';
+                recentDetections.appendChild(detectionItem);
+            }
+            
+            // Check if we should log this detection (once per minute)
+            const currentTime = Date.now();
+            if (currentTime - lastDetectionTime >= DETECTION_THROTTLE_MS) {
+                lastDetectionTime = currentTime;
+                
+                // This detection should be logged for cleaning
+                detection.forCleaning = true;
+                
+                // Update the logs UI
+                updateLogs();
+            }
+        }
+    </script>
+</body>
+</html> 

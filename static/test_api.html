@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            overflow: auto;
+            border-radius: 4px;
+        }
+        .endpoint {
+            font-family: monospace;
+            background-color: #f5f5f5;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+        }
+        .success {
+            background-color: #4CAF50;
+        }
+        .error {
+            background-color: #f44336;
+        }
+        .input-group {
+            margin-bottom: 10px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-group input {
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Garbage Detection API Test Tool</h1>
+    
+    <div class="card">
+        <h2>Server Configuration</h2>
+        <div class="input-group">
+            <label for="server-url">Server URL:</label>
+            <input type="text" id="server-url" value="http://127.0.0.1:5000" />
+        </div>
+        <button onclick="testConnection()">Test Connection</button>
+        <div id="connection-status"></div>
+    </div>
+    
+    <div class="card">
+        <h2>Test Data Management</h2>
+        <p>Create test data to help debug the app:</p>
+        <button onclick="createTestDetection()">Create Single Test Detection</button>
+        <button onclick="populateTestData()">Populate 5 Test Detections</button>
+        <div id="test-data-status"></div>
+    </div>
+    
+    <div class="card">
+        <h2>API Endpoints</h2>
+        <p>Click to test each endpoint:</p>
+        <div>
+            <button onclick="testEndpoint('get_logs')">Get All Logs</button>
+            <button onclick="testEndpoint('mobile/get_detections')">Mobile Get Detections</button>
+            <button onclick="testEndpoint('api_check')">API Check</button>
+            <button onclick="testEndpoint('debug_api')">Debug API</button>
+        </div>
+        <div id="endpoint-status"></div>
+        <pre id="endpoint-response"></pre>
+    </div>
+    
+    <div class="card">
+        <h2>Image URL Test</h2>
+        <p>Test if images are accessible:</p>
+        <div id="image-test-area"></div>
+        <button onclick="testImages()">Test First Image URL</button>
+    </div>
+
+    <script>
+        function getServerUrl() {
+            return document.getElementById('server-url').value.trim();
+        }
+
+        async function testConnection() {
+            const statusDiv = document.getElementById('connection-status');
+            statusDiv.innerHTML = 'Testing connection...';
+            
+            try {
+                const response = await fetch(`${getServerUrl()}/api_check`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <p><span class="status success">Connected</span> Server is running!</p>
+                        <p>Server time: ${data.timestamp}</p>
+                        <p>Detections: ${data.detection_count}</p>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<p><span class="status error">Error</span> ${response.statusText}</p>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p><span class="status error">Error</span> ${error.message}</p>`;
+            }
+        }
+
+        async function createTestDetection() {
+            const statusDiv = document.getElementById('test-data-status');
+            statusDiv.innerHTML = 'Creating test detection...';
+            
+            try {
+                const response = await fetch(`${getServerUrl()}/create_test_detection`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <p><span class="status success">Success</span> Test detection created!</p>
+                        <p>Class: ${data.detection.class}</p>
+                        <p>Image path: ${data.detection.image_path}</p>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<p><span class="status error">Error</span> ${data.message || response.statusText}</p>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p><span class="status error">Error</span> ${error.message}</p>`;
+            }
+        }
+
+        async function populateTestData() {
+            const statusDiv = document.getElementById('test-data-status');
+            statusDiv.innerHTML = 'Populating test data...';
+            
+            try {
+                const response = await fetch(`${getServerUrl()}/populate_test_data`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <p><span class="status success">Success</span> ${data.message}</p>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<p><span class="status error">Error</span> ${data.message || response.statusText}</p>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p><span class="status error">Error</span> ${error.message}</p>`;
+            }
+        }
+
+        async function testEndpoint(endpoint) {
+            const statusDiv = document.getElementById('endpoint-status');
+            const responseDiv = document.getElementById('endpoint-response');
+            
+            statusDiv.innerHTML = `Testing endpoint: <span class="endpoint">${endpoint}</span>...`;
+            responseDiv.innerHTML = 'Loading...';
+            
+            try {
+                const response = await fetch(`${getServerUrl()}/${endpoint}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <p><span class="status success">Success</span> Endpoint <span class="endpoint">${endpoint}</span> is working!</p>
+                    `;
+                    responseDiv.innerHTML = JSON.stringify(data, null, 2);
+                } else {
+                    statusDiv.innerHTML = `<p><span class="status error">Error</span> ${response.statusText}</p>`;
+                    responseDiv.innerHTML = JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p><span class="status error">Error</span> ${error.message}</p>`;
+                responseDiv.innerHTML = '';
+            }
+        }
+
+        async function testImages() {
+            const imageArea = document.getElementById('image-test-area');
+            imageArea.innerHTML = 'Loading images...';
+            
+            try {
+                // First get some detections
+                const response = await fetch(`${getServerUrl()}/get_logs`);
+                const detections = await response.json();
+                
+                if (detections && detections.length > 0) {
+                    const detection = detections[0];
+                    const imageUrl = detection.image_url || `${getServerUrl()}/view_image/${detection.image_path}`;
+                    
+                    imageArea.innerHTML = `
+                        <p>Testing image URL:</p>
+                        <p><code>${imageUrl}</code></p>
+                        <img src="${imageUrl}" style="max-width: 100%; max-height: 300px;" 
+                             onerror="this.onerror=null; this.src=''; this.alt='Image failed to load'; this.style.border='1px solid red';"
+                             alt="Detection Image" />
+                    `;
+                } else {
+                    imageArea.innerHTML = '<p>No detections found to test images</p>';
+                }
+            } catch (error) {
+                imageArea.innerHTML = `<p><span class="status error">Error</span> ${error.message}</p>`;
+            }
+        }
+
+        // Test connection on page load
+        window.onload = testConnection;
+    </script>
+</body>
+</html> 
