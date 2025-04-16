@@ -20,8 +20,9 @@ var/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Virtual Environment - explicitly exclude all venv contents
 venv/
+venv/**/*
 ENV/
 env/
 .env/
