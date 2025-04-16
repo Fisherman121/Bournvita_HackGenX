@@ -11,8 +11,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Allow lib directories for Flutter apps
+!**/lib/
 parts/
 sdist/
 var/
@@ -177,3 +177,7 @@ yarn-error.log*
 
 # Flutter packages
 .packages
+
+# But do include these essential Flutter files
+!**/pubspec.yaml
+!**/lib/
