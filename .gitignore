@@ -50,6 +50,7 @@ Weights/
 *.onnx
 *.tflite
 *.pb
+*.mlmodel
 
 # Media files
 *.mp4
@@ -64,6 +65,7 @@ Weights/
 *.tiff
 *.yuv
 *.raw
+*.svg
 
 # Compressed files
 *.zip
@@ -71,11 +73,15 @@ Weights/
 *.tar.gz
 *.rar
 *.7z
+*.gz
+*.bz2
+*.xz
 
 # Database files
 *.db
 *.sqlite
 *.sqlite3
+*.rdb
 
 # IDEs and editors
 .idea/
@@ -86,6 +92,12 @@ Weights/
 .project
 .pydevproject
 .settings/
+*.sublime-project
+*.sublime-workspace
+.atom/
+.vscode-test/
+.vs/
+**/coverage/
 
 # OS specific
 .DS_Store
@@ -95,6 +107,7 @@ Weights/
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -112,12 +125,18 @@ vendor/
 .cache/
 .pytest_cache/
 .mypy_cache/
+**/.sass-cache/
+**/.parcel-cache/
+**/.next/
+**/.nuxt/
+**/.docusaurus/
 
 # Log files
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 
 # Flutter specific
 **/build/
@@ -183,6 +202,35 @@ yarn-error.log*
 !**/pubspec.yaml
 !**/lib/
 
+# React/Next.js
+.pnp/
+.pnp.js
+**/out/
+**/coverage/
+**/storybook-static/
+**/.pnpm-store/
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.yarn-integrity
+
+# Local env files
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Vercel
+.vercel
+
+# BFG Repo Cleaner
+bfg.jar
+
 # Specific large files causing GitHub push issues
 Weights/best.pt
 Weights/best.onnx
@@ -190,3 +238,5 @@ processed_videos/processed_garbage.mp4
 venv/Lib/site-packages/cv2/cv2.pyd
 venv/Lib/site-packages/torch/lib/dnnl.lib
 venv/Lib/site-packages/torch/lib/torch_cpu.dll
+detections.db
+Media/
