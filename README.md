@@ -6,23 +6,29 @@
 - **Detection Reports**: Download reports of processed media
 - **User-friendly Interface**: Intuitive design for easy interaction
 - **Live Camera Integration**: Connect to cameras for continuous monitoring
+- **Multi-user Authentication**: Supports different user roles with customized portals
+- **Real-time Analytics**: Dashboard with statistics and insights on garbage detection
+- **Task Management**: System for assigning and tracking cleaning tasks
 
 ## 🛠️ Technologies Used
 
 ### Frontend
+- React.js with Next.js for web interface
+- Material UI for component styling
 - Flutter (for mobile application)
-- HTML/CSS/JavaScript (for web interface)
 
 ### Backend
 - Flask (Python web framework)
 - OpenCV (for image processing)
-- Machine Learning models for garbage classification
+- YOLOv5 for object detection and garbage classification
+- SQLite for data storage
 - RESTful API for communication between frontend and backend
 
 ## 🚀 Installation
 
 ### Prerequisites
 - Python 3.8+
+- Node.js 16+ and npm
 - Flutter SDK
 - Git
 
@@ -45,43 +51,101 @@ python app.py
 
 ### Frontend Setup
 ```bash
-# Navigate to Flutter project
-cd garbage_cleaner_minimal
+# Navigate to Frontend project
+cd Frontend
 
 # Install dependencies
-flutter pub get
+npm install
 
 # Run the application
+npm run dev
+
+# For Flutter mobile app
+cd ../garbage_detector_app
+flutter pub get
 flutter run
 ```
 
-##  Usage
+## How the System Works
 
-### Web Interface
-1. Access the application at `http://localhost:5000`
-2. Upload an image or video, or connect to a camera feed
-3. View detection results in real-time
-4. Download reports as needed
+### Website Architecture
+The web application follows a client-server architecture:
 
-### Mobile Application
-1. Launch the GarbageDetector mobile app
-2. Sign in to your account (if applicable)
-3. Use camera to detect garbage or upload media from gallery
-4. View results and statistics
+1. **Authentication System**:
+   - Multiple user roles supported: Administrator, Janitor, and Inspector
+   - Each role has access to a dedicated portal with role-specific functionalities
+   - JWT-based authentication for secure access
+
+2. **Administrator Portal**:
+   - Dashboard with real-time statistics and analytics
+   - User management for creating and managing janitor and inspector accounts
+   - Access to all detection reports and task assignments
+   - System configuration and settings
+
+3. **Janitor Portal**:
+   - Task list showing assigned garbage cleanup tasks
+   - Task management interface for updating status (pending, in progress, completed)
+   - Image upload capability to verify task completion
+   - History of completed tasks and performance metrics
+
+4. **Inspector Portal**:
+   - Review of completed tasks
+   - Approval or rejection of cleanup verification
+   - Reporting capabilities for system performance
+   - Analytics on detection accuracy and cleanup efficiency
+
+5. **Real-time Updates**:
+   - All portals feature automatic data refreshing every 60 seconds
+   - Instant notifications for task assignments and status changes
+   - Interactive maps showing detection locations and hotspots
+
+### Backend System
+The backend is built on Flask and handles:
+
+1. **Machine Learning Pipeline**:
+   - YOLOv5 model for garbage detection and classification
+   - Image preprocessing for optimal detection accuracy
+   - Confidence scoring for detected items
+
+2. **API Endpoints**:
+   - `/api/auth` - Authentication and user management
+   - `/api/detections` - Garbage detection processing and results
+   - `/api/tasks` - Task creation, assignment, and management
+   - `/api/reports` - Report generation and statistics
+   - `/api/logs` - System activity logging
+   - `/get_logs` - Retrieval of detection history
+   - `/update_status` - Updating task completion status
+
+3. **Data Management**:
+   - SQLite database for storing detection results, user data, and task information
+   - File system storage for images and detection results
+   - Automatic cleanup of temporary files
+
+4. **Processing Pipeline**:
+   - Input validation and sanitization
+   - Queue system for handling multiple detection requests
+   - Asynchronous processing for improved performance
+   - Results caching for frequently accessed data
 
 ## 📁 Project Structure
 
 ```
 /GarbageDetector/
-├── garbage_cleaner_minimal/       # Flutter mobile application
+├── Frontend/                      # Next.js web application
+│   ├── app/                       # Next.js pages and components
+│   ├── public/                    # Static assets
+│   └── package.json               # Frontend dependencies
+├── garbage_detector_app/          # Flutter mobile application
 │   ├── lib/                       # Dart source code
 │   ├── pubspec.yaml               # Flutter dependencies
-│   └── ...                        # Other Flutter-related files
+├── garbage-cleaner-pwa/           # Progressive Web App
+│   ├── src/                       # React components
+│   ├── public/                    # Static assets
 ├── app.py                         # Flask application (main backend)
-├── GarbageDetector.py             # Core detection algorithms
-├── GarbageDetector_Camera.py      # Camera integration
-├── GarbageDetectorLive.py         # Live detection processing
-├── index.html                     # Web interface
+├── detector/                      # Core detection algorithms
+├── database/                      # Database models and connections
+├── utils/                         # Utility functions
+├── api/                           # API endpoint definitions
 └── README.md                      # This documentation
 ```
 
@@ -97,6 +161,8 @@ flutter run
 - [ ] Create mobile notifications for critical garbage accumulation
 - [ ] Integrate with waste collection scheduling systems
 - [ ] Improve detection accuracy in various lighting conditions
+- [ ] Add geofencing capabilities for location-based alerts
+- [ ] Implement predictive analytics for optimizing cleanup routes
 
 ## 📄 License
 
@@ -108,4 +174,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Dataset 2](https://github.com/garythung/trashnet.git)
 - [OpenCV](https://opencv.org/) for image processing capabilities
 - [Flutter](https://flutter.dev/) for cross-platform application development
-- [Flask](https://flask.palletsprojects.com/) for backend web framework 
+- [Flask](https://flask.palletsprojects.com/) for backend web framework
+- [Next.js](https://nextjs.org/) for frontend framework
+- [Material UI](https://mui.com/) for UI components 
