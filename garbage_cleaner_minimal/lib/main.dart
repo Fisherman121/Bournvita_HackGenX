@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'dart:async';
+import 'package:provider/provider.dart';
 
 // Import our components
 import 'models/detection.dart';
@@ -18,13 +19,34 @@ import 'screens/detection_list_screen.dart';
 import 'screens/detection_detail_screen.dart';
 import 'screens/zone_management_screen.dart';
 import 'screens/detections_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/theme_settings_screen.dart';
+import 'utils/config.dart';
+import 'providers/theme_provider.dart';
+import 'widgets/theme_toggle_button.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Print configuration for debugging
+  Config.printConfig();
+  
   // Initialize API service with saved server URL
   await ApiService.initFromPrefs();
   print("Starting app with server URL: ${ApiService.baseUrl}");
+  
+  // Test image server connectivity
+  try {
+    final apiService = ApiService();
+    final result = await apiService.testImageServer();
+    if (result['success'] as bool) {
+      print("Image server test successful, using URL: ${result['url_used']}");
+    } else {
+      print("Image server test failed: ${result['message']}");
+    }
+  } catch (e) {
+    print("Failed to test image server: $e");
+  }
   
   // Add test data to local storage
   await TestDataService.addTestData();
@@ -32,7 +54,12 @@ void main() async {
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
   
-  runApp(GarbageCleanerApp(isLoggedIn: isLoggedIn));
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: GarbageCleanerApp(isLoggedIn: isLoggedIn),
+    ),
+  );
 }
 
 class GarbageCleanerApp extends StatelessWidget {
@@ -42,14 +69,20 @@ class GarbageCleanerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    
     return MaterialApp(
       title: 'Garbage Cleaner',
+      themeMode: themeProvider.themeMode, // This controls light/dark mode
       theme: ThemeData(
         primarySwatch: Colors.green,
+        brightness: Brightness.light,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           elevation: 0,
           centerTitle: true,
+          backgroundColor: Colors.green[700],
+          foregroundColor: Colors.white,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -57,6 +90,36 @@ class GarbageCleanerApp extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
           ),
+        ),
+        colorScheme: ColorScheme.light(
+          primary: Colors.green[700]!,
+          secondary: Colors.green[400]!,
+        ),
+      ),
+      darkTheme: ThemeData(
+        primarySwatch: Colors.green,
+        brightness: Brightness.dark,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        appBarTheme: AppBarTheme(
+          elevation: 0,
+          centerTitle: true,
+          backgroundColor: Colors.grey[900],
+          foregroundColor: Colors.white,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        scaffoldBackgroundColor: Colors.grey[900],
+        cardColor: Colors.grey[800],
+        colorScheme: ColorScheme.dark(
+          primary: Colors.green[700]!,
+          secondary: Colors.green[400]!,
+          surface: Colors.grey[800]!,
+          background: Colors.grey[900]!,
         ),
       ),
       home: isLoggedIn ? const DashboardScreen() : const LoginScreen(),
@@ -119,7 +182,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.themeMode == ThemeMode.dark;
+    
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Login'),
+        backgroundColor: isDark ? Colors.grey[900] : Colors.green[700],
+        actions: [
+          const ThemeToggleButton(),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Center(
@@ -148,7 +221,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.grey[600],
+                    color: themeProvider.themeMode == ThemeMode.dark 
+                      ? Colors.grey[400]
+                      : Colors.grey[600],
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -181,16 +256,59 @@ class _LoginScreenState extends State<LoginScreen> {
                       : const Text('LOGIN'),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Use: staff / password123',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.grey,
+                    color: themeProvider.themeMode == ThemeMode.dark 
+                      ? Colors.grey[400]
+                      : Colors.grey[600],
                   ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ThemeSettingsScreen(),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark ? Colors.amber[700] : Colors.green[700],
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('THEME SETTINGS'),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+      floatingActionButton: const ThemeToggleButton(showAsAction: false),
+      bottomNavigationBar: BottomAppBar(
+        color: isDark ? Colors.grey[850] : Colors.green[700],
+        height: 56,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton.icon(
+              icon: Icon(
+                isDark ? Icons.light_mode : Icons.dark_mode,
+                color: Colors.white,
+              ),
+              label: Text(
+                isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onPressed: () {
+                themeProvider.setThemeMode(
+                  isDark ? ThemeMode.light : ThemeMode.dark,
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -234,15 +352,81 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final detections = await _localStorage.getDetections();
       // Check if widget is still mounted before setting state
       if (!mounted) return;
-      setState(() {
+        setState(() {
         _recentDetections = detections.take(5).toList();
         _isLoadingDetections = false;
-      });
+        });
     } catch (e) {
       print('Error fetching detections: $e');
       // Check if widget is still mounted before setting state
       if (!mounted) return;
       setState(() {
+        _isLoadingDetections = false;
+      });
+    }
+  }
+
+  // Add this method to sync with the server
+  Future<void> _syncWithServer() async {
+    if (_isLoadingDetections) return;
+
+    // Check if widget is still mounted before setting state
+    if (!mounted) return;
+    setState(() {
+      _isLoadingDetections = true;
+    });
+
+    try {
+      // Show a syncing message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Syncing with server...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      
+      // Perform the sync
+      final success = await _localStorage.syncWithServer();
+      
+      // Refresh the detections list
+      if (success) {
+        await _fetchRecentDetections();
+        
+        // Show success message
+        if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sync completed successfully'),
+            backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sync failed. Check your connection.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error syncing with server: $e');
+      // Show error message
+      if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Sync error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    } finally {
+      // Check if widget is still mounted before setting state
+      if (!mounted) return;
+    setState(() {
         _isLoadingDetections = false;
       });
     }
@@ -260,10 +444,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Garbage Cleaner'),
         actions: [
+          // Theme toggle button
+          const ThemeToggleButton(),
+          // Add a refresh button to sync with server
+          IconButton(
+            icon: const Icon(Icons.sync),
+            onPressed: _syncWithServer,
+            tooltip: 'Sync with server',
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              // Open settings screen
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.color_lens),
+            tooltip: 'Theme Settings',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ThemeSettingsScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -273,15 +487,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
-          BottomNavigationBarItem(
+        type: BottomNavigationBarType.fixed,
+        onTap: (index) {
+          if (index == 2) {
+            // Toggle theme when the theme button is pressed
+            final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+            themeProvider.setThemeMode(
+              themeProvider.themeMode == ThemeMode.dark
+                  ? ThemeMode.light
+                  : ThemeMode.dark,
+            );
+          } else {
+            setState(() {
+              _currentIndex = index;
+            });
+          }
+        },
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.list),
             label: 'Detections',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(
+              themeProvider.themeMode == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+            label: 'Theme',
           ),
         ],
       ),
@@ -311,16 +548,16 @@ class _DashboardContentState extends State<DashboardContent> {
     setState(() => _isLoading = true);
     try {
       final detections = await _storage.getDetections();
-      setState(() {
+    setState(() {
         _recentDetections = detections.take(5).toList();
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading detections: $e')),
-        );
+    );
       }
     }
   }
@@ -382,16 +619,16 @@ class _DashboardContentState extends State<DashboardContent> {
                         'Your CCTV-Monitored Detection System is active and running smoothly.',
                         style: TextStyle(fontSize: 15),
                       ),
-                    ],
-                  ),
-                ),
+          ],
+        ),
+      ),
               ),
               
               const SizedBox(height: 24),
               
               // Quick stats
               Row(
-                children: [
+                    children: [
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.camera_alt,
@@ -437,7 +674,7 @@ class _DashboardContentState extends State<DashboardContent> {
                 ],
               ),
               
-              const SizedBox(height: 8),
+                      const SizedBox(height: 8),
               
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -459,42 +696,97 @@ class _DashboardContentState extends State<DashboardContent> {
                           children: _recentDetections.map((detection) {
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: _getStatusColor(detection.status),
-                                  child: Text(
-                                    detection.detectionClass[0].toUpperCase(),
-                                    style: const TextStyle(color: Colors.white),
+                              child: InkWell(
+                                onTap: () => _showDetectionDetails(context, detection),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Row(
+                                    children: [
+                                      // Add thumbnail image
+                                      if (detection.hasImage)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: SizedBox(
+                                            width: 60,
+                                            height: 60,
+                          child: Image.network(
+                                              detection.effectiveImageUrl,
+                            fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  width: 60,
+                                                  height: 60,
+                                                  color: Colors.grey[200],
+                                                  child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                                                );
+                                              },
+                                              loadingBuilder: (context, child, loadingProgress) {
+                                                if (loadingProgress == null) return child;
+                              return Container(
+                                                  width: 60,
+                                                  height: 60,
+                                                  color: Colors.grey[200],
+                                                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                                );
+                                              },
+                                              cacheWidth: 120, // Cache with 2x resolution for crisp display
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        CircleAvatar(
+                                          backgroundColor: _getStatusColor(detection.status),
+                                          radius: 20,
+                                          child: Text(
+                                            detection.detectionClass[0].toUpperCase(),
+                                            style: const TextStyle(color: Colors.white),
+                                          ),
+                                        ),
+                                      const SizedBox(width: 12),
+                            Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              detection.detectionClass,
+                                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                                            Text(
+                                              '${detection.zoneName} - ${_formatTimestamp(detection.timestamp)}',
+                                              style: const TextStyle(fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: detection.status.toLowerCase() == 'cleaned'
+                                              ? Colors.green
+                                              : Colors.orange,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          detection.status.toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                        ),
+                      ),
+                    ],
                                   ),
                                 ),
-                                title: Text(detection.detectionClass),
-                                subtitle: Text(
-                                  '${detection.zoneName} - ${_formatTimestamp(detection.timestamp)}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: detection.status.toLowerCase() == 'cleaned'
-                                        ? Colors.green
-                                        : Colors.orange,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    detection.status.toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                onTap: () {
-                                  _showDetectionDetails(context, detection);
-                                },
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             );
                           }).toList(),
@@ -520,10 +812,10 @@ class _DashboardContentState extends State<DashboardContent> {
                     }
                   },
                   borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
                     child: Row(
-                      children: [
+          children: [
                         CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
                           radius: 24,
@@ -535,11 +827,99 @@ class _DashboardContentState extends State<DashboardContent> {
                         ),
                         const SizedBox(width: 16),
                         const Expanded(
+                child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                              Text(
+                                'Add Test Data',
+                      style: TextStyle(
+                                  fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                                  Text(
+                                'Add sample detections to test the application',
+                                    style: TextStyle(
+                                  fontSize: 14,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 20,
+                          color: Colors.blue,
+                        ),
+                      ],
+                            ),
+                          ),
+                        ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Load Sample Data from Server button
+              Card(
+                elevation: 2,
+                color: Colors.green.shade50,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: InkWell(
+                  onTap: () async {
+                    // Show loading indicator
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Loading sample data from server...')),
+                    );
+                    
+                    // Load sample data from server
+                    final success = await TestDataService.loadSampleDataFromServer();
+                    
+                    if (success) {
+                      _loadDetections();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sample data loaded from server'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } else {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to load sample data from server'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.green.shade100,
+                          radius: 24,
+                          child: const Icon(
+                            Icons.cloud_download,
+                            color: Colors.green,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Add Test Data',
+                                'Load Server Data',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -547,19 +927,19 @@ class _DashboardContentState extends State<DashboardContent> {
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'Add sample detections to test the application',
+                                'Load sample detections from the server',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
+                      ),
+                  ],
+                ),
+              ),
                         const Icon(
                           Icons.arrow_forward_ios,
                           size: 20,
-                          color: Colors.blue,
+                          color: Colors.green,
                         ),
                       ],
                     ),
@@ -582,10 +962,10 @@ class _DashboardContentState extends State<DashboardContent> {
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            children: [
+                                  children: [
               Center(
                 child: Container(
                   width: 40,
@@ -597,14 +977,50 @@ class _DashboardContentState extends State<DashboardContent> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
+                                    Text(
                 detection.detectionClass,
-                style: const TextStyle(
+                                      style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 8),
+              
+              // Add image if available
+              if (detection.hasImage) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    detection.effectiveImageUrl,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 150,
+                        color: Colors.grey[200],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                              : null,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 150,
+                        color: Colors.grey[200],
+                        child: const Center(child: Icon(Icons.broken_image, size: 32, color: Colors.grey)),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              
               _buildDetailRow('Status', detection.status),
               _buildDetailRow('Confidence', '${(detection.confidence * 100).toStringAsFixed(1)}%'),
               _buildDetailRow('Location', detection.location),
@@ -709,9 +1125,9 @@ class _DashboardContentState extends State<DashboardContent> {
             ),
           ],
         ),
-      ),
-    );
-  }
+          ),
+        );
+      }
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {

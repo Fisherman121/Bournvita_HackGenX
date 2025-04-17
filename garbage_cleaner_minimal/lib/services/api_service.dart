@@ -21,6 +21,13 @@ class ApiService {
   static String _baseUrl = Config.apiBaseUrl;
   final http.Client _client;
   static bool debugMode = true; // Enable debug printing
+  
+  // Track which image server URL works best
+  static String? _workingImageServerUrl;
+  
+  // Add flag to bypass normal URL building for testing purposes
+  static bool useTestMode = false;
+  static String testImageServerUrl = ''; // Will be set by the test UI
 
   ApiService({
     String? baseUrl,
@@ -155,24 +162,143 @@ class ApiService {
     }
   }
   
-  // Get all detections directly from logs (not just those marked for cleaning)
-  Future<List<Detection>> getAllDetections() async {
+  // Test image server connectivity
+  Future<Map<String, dynamic>> testImageServer() async {
     try {
-      final url = await getBaseUrl();
-      final response = await _client.get(
-        Uri.parse('$url/detections'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(Config.apiTimeout);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => Detection.fromJson(json, baseUrl: url)).toList();
-      } else {
-        throw ApiException('Failed to fetch detections', statusCode: response.statusCode);
+      final baseUrl = await getBaseUrl();
+      final imageUrl = '${Config.getImageServerUrl()}/static/images/placeholder-image.jpg';
+      final altImageUrl = '$baseUrl/static/images/placeholder-image.jpg';
+      
+      debugPrint("Testing image server URL: $imageUrl");
+      
+      try {
+        // Try first image URL
+        final response = await _client.head(
+          Uri.parse(imageUrl),
+        ).timeout(const Duration(seconds: 10));
+        
+        debugPrint("Image server test - Primary URL - Status: ${response.statusCode}");
+        
+        if (response.statusCode == 200) {
+          // Save this as the working URL
+          final urlBase = imageUrl.substring(0, imageUrl.lastIndexOf('/static'));
+          setWorkingImageServerUrl(urlBase);
+          
+          return {
+            'success': true,
+            'message': 'Image server connection successful',
+            'status_code': response.statusCode,
+            'url_used': imageUrl,
+          };
+        }
+      } catch (e) {
+        debugPrint("Primary image URL test failed: $e");
+      }
+      
+      // If first URL failed, try alternative URL
+      debugPrint("Trying alternative image URL: $altImageUrl");
+      
+      try {
+        final altResponse = await _client.head(
+          Uri.parse(altImageUrl),
+        ).timeout(const Duration(seconds: 10));
+        
+        debugPrint("Image server test - Alternative URL - Status: ${altResponse.statusCode}");
+        
+        if (altResponse.statusCode == 200) {
+          // Save this as the working URL
+          final urlBase = altImageUrl.substring(0, altImageUrl.lastIndexOf('/static'));
+          setWorkingImageServerUrl(urlBase);
+          
+          return {
+            'success': true,
+            'message': 'Alternative image URL connection successful',
+            'status_code': altResponse.statusCode,
+            'url_used': altImageUrl,
+          };
+        }
+        
+        return {
+          'success': false,
+          'message': 'Both image URLs failed - Status: ${altResponse.statusCode}',
+          'status_code': altResponse.statusCode,
+        };
+      } catch (e) {
+        debugPrint("Alternative image URL test failed: $e");
+        return {
+          'success': false,
+          'message': 'All image server tests failed',
+          'error': e.toString(),
+        };
       }
     } catch (e) {
-      throw ApiException('Network error: ${e.toString()}');
+      debugPrint("Image server test error: $e");
+      return {'success': false, 'message': 'Image server error: $e', 'error': e.toString()};
     }
+  }
+  
+  // Get all detections directly from the new API endpoint with fallbacks
+  Future<List<Detection>> getAllDetections() async {
+    List<String> errors = [];
+    
+    // List of endpoints to try in order
+    final endpoints = [
+      "/api/detections",   // New API endpoint
+      "/get_logs",         // Legacy endpoint
+      "/mobile/get_detections", // Mobile-specific endpoint
+    ];
+    
+    for (final endpoint in endpoints) {
+      try {
+        final url = await getBaseUrl();
+        final fullUrl = "$url$endpoint";
+        debugPrint("Fetching detections from: $fullUrl");
+        
+        final response = await _client.get(
+          Uri.parse(fullUrl),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(Config.apiTimeout);
+
+        if (response.statusCode == 200) {
+          // Try to parse the response based on the endpoint format
+          if (endpoint == "/api/detections") {
+            // New API format with success flag and detections array
+            final data = json.decode(response.body);
+            if (data['success'] == true && data['detections'] != null) {
+              final List<dynamic> detectionList = data['detections'];
+              debugPrint("Parsed ${detectionList.length} detections from $endpoint");
+              return detectionList.map((json) => Detection.fromJson(json, baseUrl: url)).toList();
+            }
+          } else if (endpoint == "/get_logs") {
+            // Direct array format from legacy endpoint
+            final List<dynamic> detectionList = json.decode(response.body);
+            debugPrint("Parsed ${detectionList.length} detections from $endpoint");
+            return detectionList.map((json) => Detection.fromJson(json, baseUrl: url)).toList();
+          } else if (endpoint == "/mobile/get_detections") {
+            // Mobile format with success flag and detections array
+            final data = json.decode(response.body);
+            if (data['success'] == true && data['detections'] != null) {
+              final List<dynamic> detectionList = data['detections'];
+              debugPrint("Parsed ${detectionList.length} detections from $endpoint");
+              return detectionList.map((json) => Detection.fromJson(json, baseUrl: url)).toList();
+            }
+          }
+        }
+        
+        // If we get here, the endpoint didn't return valid data
+        errors.add("Endpoint $endpoint returned status ${response.statusCode}");
+        
+      } catch (e) {
+        debugPrint("Error fetching from $endpoint: $e");
+        errors.add("$endpoint: ${e.toString()}");
+        // Continue to next endpoint
+      }
+    }
+    
+    // If we've tried all endpoints and none worked
+    final errorMsg = "All endpoints failed: ${errors.join(', ')}";
+    debugPrint(errorMsg);
+    throw ApiException(errorMsg);
   }
   
   // Get all detections from the server (only cleaning tasks)
@@ -213,24 +339,38 @@ class ApiService {
     }
   }
   
-  // Update detection status
-  Future<void> updateDetectionStatus(String timestamp, String status) async {
+  // Update detection status using new API endpoint
+  Future<bool> updateDetectionStatus(String timestamp, String status, {String? cleanedBy, String? notes}) async {
     try {
       final url = await getBaseUrl();
+      debugPrint("Updating detection status at: $url/api/detections/$timestamp");
+      
+      final payload = {
+        'status': status,
+      };
+      
+      if (status == 'cleaned' && cleanedBy != null) {
+        payload['cleanedBy'] = cleanedBy;
+        if (notes != null) {
+          payload['notes'] = notes;
+        }
+      }
+      
       final response = await _client.patch(
-        Uri.parse('$url/detections/$timestamp'),
+        Uri.parse('$url/api/detections/$timestamp'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'status': status}),
+        body: json.encode(payload),
       ).timeout(Config.apiTimeout);
 
-      if (response.statusCode != 200) {
-        throw ApiException(
-          'Failed to update detection status',
-          statusCode: response.statusCode,
-        );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] == true;
+      } else {
+        throw ApiException('Failed to update detection status', statusCode: response.statusCode);
       }
     } catch (e) {
-      throw ApiException('Network error: ${e.toString()}');
+      debugPrint("Error updating detection status: $e");
+      return false;
     }
   }
   
@@ -416,27 +556,133 @@ class ApiService {
     }
   }
 
-  // Sync local detections with server
-  Future<void> syncDetections(List<Detection> localDetections) async {
+  // Sync local detections with the server
+  Future<bool> syncDetections(List<Detection> localDetections) async {
     try {
-      final url = await getBaseUrl();
+      // First update any local changes to the server
+      for (var detection in localDetections) {
+        if (detection.status == 'cleaned') {
+          // If it's been cleaned locally, update on server
+          await updateDetectionStatus(
+            detection.timestamp, 
+            detection.status,
+            cleanedBy: detection.cleanedBy,
+            notes: detection.notes
+          );
+        }
+      }
+      
+      // Then get latest from server
+      return true;
+    } catch (e) {
+      debugPrint("Error syncing detections: $e");
+      return false;
+    }
+  }
+
+  Future<bool> addDetection(Detection detection) async {
+    try {
       final response = await _client.post(
-        Uri.parse('$url/mobile/sync_detections'),
+        Uri.parse('$baseUrl/api/detections'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'detections': localDetections.map((d) => d.toJson()).toList(),
-        }),
+        body: json.encode(detection.toJson()),
       ).timeout(Config.apiTimeout);
       
-      if (response.statusCode != 200) {
-        throw ApiException('Failed to sync detections', statusCode: response.statusCode);
-      }
+      return response.statusCode == 200 || response.statusCode == 201;
     } catch (e) {
-      throw ApiException('Network error: ${e.toString()}');
+      print('Error adding detection: $e');
+      return false;
     }
   }
 
   void dispose() {
     _client.close();
+  }
+
+  // Get a working image URL (with caching)
+  static String getImageUrl(String path) {
+    // If test mode is enabled, use the test URL
+    if (useTestMode && testImageServerUrl.isNotEmpty) {
+      debugPrint("Using test image URL: $testImageServerUrl");
+      return testImageServerUrl;
+    }
+    
+    String baseUrl;
+    if (_workingImageServerUrl != null) {
+      // Use cached working URL 
+      baseUrl = _workingImageServerUrl!;
+    } else {
+      // Default to Config image server
+      baseUrl = Config.getImageServerUrl();
+    }
+    
+    // Ensure path doesn't start with a slash if baseUrl ends with one
+    if (baseUrl.endsWith('/') && path.startsWith('/')) {
+      path = path.substring(1);
+    } else if (!baseUrl.endsWith('/') && !path.startsWith('/')) {
+      path = '/$path';
+    }
+    
+    final fullUrl = baseUrl + path;
+    
+    // Ensure the URL uses http or https
+    if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+      return 'http://$fullUrl';
+    }
+    
+    return fullUrl;
+  }
+  
+  // Update the working image server URL based on test results
+  static void setWorkingImageServerUrl(String url) {
+    debugPrint("Setting working image server URL to: $url");
+    _workingImageServerUrl = url;
+  }
+
+  // New method to fetch an image as base64 from the server
+  Future<String?> getImageAsBase64(String imagePath) async {
+    if (imagePath.isEmpty) return null;
+    
+    try {
+      final servers = [
+        // Try multiple possible servers
+        "${ApiService.baseUrl}/get_image_base64/$imagePath",
+        "http://172.26.26.216:5000/get_image_base64/$imagePath",
+        "http://10.0.2.2:8080/get_image_base64/$imagePath",
+      ];
+      
+      for (final serverUrl in servers) {
+        try {
+          debugPrint("Trying to fetch image as base64 from: $serverUrl");
+          final response = await _client.get(
+            Uri.parse(serverUrl),
+          ).timeout(const Duration(seconds: 10));
+          
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            if (data['success'] == true && data['image_data'] != null) {
+              final base64Data = data['image_data'];
+              debugPrint("Successfully retrieved image as base64, length: ${base64Data.length}");
+              return base64Data;
+            }
+          }
+        } catch (e) {
+          debugPrint("Error fetching image as base64 from $serverUrl: $e");
+          // Continue to next server
+        }
+      }
+      
+      // If we reach here, we couldn't get the base64 data from any server
+      return null;
+    } catch (e) {
+      debugPrint("Error in getImageAsBase64: $e");
+      return null;
+    }
+  }
+  
+  // Fallback to a built-in base64 image of a placeholder
+  static String getPlaceholderImageBase64() {
+    // This is a very small base64-encoded placeholder image
+    return "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkAQMAAABKLAcXAAAAA1BMVEXm5uTwA8sKAAAAE0lEQVR4AWOgFRgFo2AUjIJRQE8AAAs8AAEjhT8SAAAAAElFTkSuQmCC";
   }
 } 

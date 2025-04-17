@@ -200,7 +200,7 @@ class _ZoneManagementScreenState extends State<ZoneManagementScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      zone.location,
+                      zone.locationString,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[700],
@@ -228,9 +228,9 @@ class _ZoneManagementScreenState extends State<ZoneManagementScreen> {
       (zone) => zone.id == _selectedZoneId,
       orElse: () => Zone(
         id: 'unknown',
-        zoneName: 'Unknown Zone',
-        location: 'Unknown Location',
+        name: 'Unknown Zone',
         description: 'No description available',
+        cameraIds: [],
       ),
     );
     
@@ -267,7 +267,7 @@ class _ZoneManagementScreenState extends State<ZoneManagementScreen> {
                 ),
                 const SizedBox(height: 12),
                 _buildDetailRow('ID', selectedZone.id),
-                _buildDetailRow('Location', selectedZone.location),
+                _buildDetailRow('Location', selectedZone.locationString),
                 _buildDetailRow('Description', selectedZone.description),
                 const SizedBox(height: 16),
                 const Text(

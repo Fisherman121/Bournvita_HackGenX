@@ -250,8 +250,6 @@ class LocalStorage {
     } catch (e) {
       print('Error syncing with server: $e');
       success = false;
-    } finally {
-      apiService.dispose();
     }
     
     return success;
@@ -271,6 +269,56 @@ class LocalStorage {
       success = false;
     } finally {
       apiService.dispose();
+    }
+    
+    return success;
+  }
+
+  Future<bool> addDetectionAndSync(Detection detection) async {
+    final apiService = ApiService();
+    bool success = false;
+    
+    try {
+      await saveDetections([detection]);
+      
+      success = await apiService.addDetection(detection);
+      
+      if (success) {
+        await markAsSynced(detection.timestamp);
+      }
+    } catch (e) {
+      print('Error adding detection and syncing: $e');
+      success = false;
+    }
+    
+    return success;
+  }
+  
+  Future<bool> updateStatusAndSync(String timestamp, String status, String? cleanedBy, String? notes) async {
+    final apiService = ApiService();
+    bool success = false;
+    
+    try {
+      if (status == 'cleaned' && cleanedBy != null) {
+        await markAsCleaned(timestamp, cleanedBy, notes ?? '');
+      } else {
+        final db = await database;
+        await db.update(
+          'detections',
+          {'status': status, 'syncedAt': null},
+          where: 'timestamp = ?',
+          whereArgs: [timestamp],
+        );
+      }
+      
+      success = await apiService.updateDetectionStatus(timestamp, status, cleanedBy: cleanedBy, notes: notes);
+      
+      if (success) {
+        await markAsSynced(timestamp);
+      }
+    } catch (e) {
+      print('Error updating status and syncing: $e');
+      success = false;
     }
     
     return success;

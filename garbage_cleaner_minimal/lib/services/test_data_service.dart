@@ -1,5 +1,8 @@
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/detection.dart';
-import 'local_storage.dart';
+import '../services/local_storage.dart';
+import '../services/api_service.dart';
 
 class TestDataService {
   static final List<Detection> _testDetections = [
@@ -97,12 +100,69 @@ class TestDataService {
   ];
 
   static Future<void> addTestData() async {
-    final storage = LocalStorage();
-    await storage.saveDetections(_testDetections);
+    final localStorage = LocalStorage();
+    
+    List<Detection> detections = [];
+    
+    // Create 5 test detections
+    for (int i = 0; i < 5; i++) {
+      final classIndex = i % _testDetections.length;
+      final zoneIndex = i % _testDetections.length;
+      
+      detections.add(
+        Detection(
+          timestamp: _generateTimestamp(),
+          detectionClass: _testDetections[classIndex].detectionClass,
+          confidence: 0.7 + (i * 0.05),
+          status: i % 3 == 0 ? 'cleaned' : 'pending',
+          imagePath: 'test_image_$i.jpg',
+          imageUrl: 'https://via.placeholder.com/150?text=${_testDetections[classIndex].detectionClass}',
+          forCleaning: true,
+          cameraId: 'cam-${i + 1}',
+          zoneName: _testDetections[zoneIndex].zoneName,
+          location: _testDetections[zoneIndex].location,
+          cleanedBy: i % 3 == 0 ? 'Test User' : null,
+          cleanedAt: i % 3 == 0 ? DateTime.now().toIso8601String() : null,
+          notes: i % 3 == 0 ? 'Test cleanup note' : null,
+        ),
+      );
+    }
+    
+    await localStorage.saveDetections(detections);
   }
 
   static Future<void> clearTestData() async {
     final storage = LocalStorage();
     await storage.deleteAllDetections();
+  }
+
+  // Generate a timestamp in the ISO 8601 format
+  static String _generateTimestamp() {
+    final now = DateTime.now();
+    return now.toIso8601String();
+  }
+
+  // Add sample data from the Flask server endpoint
+  static Future<bool> loadSampleDataFromServer() async {
+    try {
+      final url = await ApiService.getBaseUrl();
+      final response = await http.get(
+        Uri.parse('$url/sample_data'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          // Sync with server to get the new data
+          final localStorage = LocalStorage();
+          return await localStorage.syncWithServer();
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error loading sample data from server: $e');
+      return false;
+    }
   }
 } 

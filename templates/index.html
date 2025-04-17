@@ -260,9 +260,33 @@
             <div id="photo" class="tab-content">
                 <div class="bg-white rounded-xl shadow-sm p-6">
                     <h2 class="text-xl font-semibold mb-4 text-gray-800">Photo Detection</h2>
+                    
+                    <!-- Location Input Section -->
+                    <div class="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h3 class="text-lg font-medium mb-3 text-gray-800">
+                            <i class="fas fa-map-marker-alt text-green-600 mr-2"></i>Location Information
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="locationName" class="block text-sm font-medium text-gray-700 mb-1">Location Name</label>
+                                <input type="text" id="locationName" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500" placeholder="e.g. Main Entrance, Building A">
+                            </div>
+                            <div>
+                                <label for="manualCoordinates" class="block text-sm font-medium text-gray-700 mb-1">Manual Coordinates (optional)</label>
+                                <input type="text" id="manualCoordinates" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500" placeholder="e.g. 12.345, -67.890">
+                            </div>
+                        </div>
+                        <div class="mt-4 flex items-center">
+                            <button id="getCurrentLocation" class="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                                <i class="fas fa-crosshairs mr-2"></i>Get Current Location
+                            </button>
+                            <div id="locationStatus" class="ml-4 text-sm"></div>
+                        </div>
+                    </div>
+                    
                     <div class="drop-zone mb-6" id="photoDropZone">
                         <i class="fas fa-cloud-upload-alt text-4xl text-green-600 mb-4"></i>
-                        <p class="text-gray-600 mb-2">Drag and drop an image here</p>
+                        <p class="text-gray-600 mb-2">Drag and drop a photo here</p>
                         <p class="text-sm text-gray-500 mb-4">or</p>
                         <input type="file" id="photoInput" accept="image/*" class="hidden">
                         <button onclick="document.getElementById('photoInput').click()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition">
@@ -270,20 +294,34 @@
                         </button>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="video-container">
-                            <div class="video-label">Original Image</div>
-                            <img id="photoPreview" class="w-full h-full object-cover hidden" alt="Photo Preview">
-                        </div>
-                        <div class="video-container">
-                            <div class="video-label">Processed Image</div>
-                            <img id="processedPhotoPreview" class="w-full h-full object-cover hidden" alt="Processed Photo">
-                            <div id="photoProcessing" class="buffering-spinner hidden"></div>
-                            <div class="video-controls">
-                                <button id="downloadProcessedPhoto" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition hidden">
-                                    <i class="fas fa-download mr-2"></i>Download Processed Image
-                                </button>
+                        <div>
+                            <h3 class="text-md font-medium mb-2 text-gray-800">Original Photo</h3>
+                            <div class="relative border rounded-lg overflow-hidden">
+                                <img id="originalPhoto" src="#" alt="Original photo" class="w-full h-64 object-contain hidden">
+                                <div id="photoPlaceholder" class="w-full h-64 bg-gray-100 flex items-center justify-center">
+                                    <span class="text-gray-400"><i class="fas fa-image text-2xl"></i></span>
+                                </div>
                             </div>
                         </div>
+                        <div>
+                            <h3 class="text-md font-medium mb-2 text-gray-800">Processed Photo</h3>
+                            <div class="relative border rounded-lg overflow-hidden">
+                                <img id="processedPhoto" src="#" alt="Processed photo" class="w-full h-64 object-contain hidden">
+                                <div id="processedPhotoPlaceholder" class="w-full h-64 bg-gray-100 flex items-center justify-center">
+                                    <span class="text-gray-400"><i class="fas fa-image text-2xl"></i></span>
+                                </div>
+                                <div id="photoProcessing" class="processing-overlay hidden">
+                                    <i class="fas fa-cog fa-spin text-4xl mb-4"></i>
+                                    <p class="text-xl mb-2">Processing Photo...</p>
+                                    <div class="progress-bar">
+                                        <div class="progress-bar-fill" id="photoProgressBar"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <div id="photoDetectionResult" class="hidden bg-green-50 border border-green-200 text-green-800 p-4 rounded-lg"></div>
                     </div>
                 </div>
             </div>
@@ -467,10 +505,90 @@
             // Just fetch detections for the recent lists
             fetchDetections();
             setInterval(fetchDetections, 5000);
+            
+            // Setup drag and drop for photo uploads
+            setupDropZone(
+                document.getElementById('photoDropZone'),
+                document.getElementById('photoInput'),
+                handlePhotoUpload
+            );
+            
+            // Setup drag and drop for video uploads 
+            const videoDropZone = document.getElementById('videoDropZone');
+            const videoInput = document.getElementById('videoInput');
+            
+            if (videoDropZone && videoInput) {
+                videoDropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    videoDropZone.classList.add('dragover');
+                });
+                
+                videoDropZone.addEventListener('dragleave', () => {
+                    videoDropZone.classList.remove('dragover');
+                });
+                
+                videoDropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    videoDropZone.classList.remove('dragover');
+                    
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                        videoInput.files = e.dataTransfer.files;
+                        
+                        // Handle video file
+                        const url = URL.createObjectURL(file);
+                        const videoPlayer = document.getElementById('videoPlayer');
+                        videoPlayer.src = url;
+                        videoPlayer.classList.remove('hidden');
+                        
+                        // Show buffering spinner
+                        const processingElement = document.getElementById('videoProcessing');
+                        processingElement.classList.remove('hidden');
+                        
+                        // Process video
+                        const formData = new FormData();
+                        formData.append('video', file);
+                        
+                        fetch('/process_video', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            processingElement.classList.add('hidden');
+                            
+                            // Show processed video
+                            const processedVideo = document.getElementById('processedVideoPlayer');
+                            processedVideo.classList.remove('hidden');
+                            
+                            // Direct source to the processed file path
+                            if (data.processed_path) {
+                                processedVideo.src = '/' + data.processed_path.replace(/\\/g, '/');
+                                processedVideo.load();
+                            }
+                            
+                            // Show download button
+                            const downloadButton = document.getElementById('downloadProcessedVideo');
+                            downloadButton.classList.remove('hidden');
+                            downloadButton.onclick = () => {
+                                // Extract filename from path
+                                const filename = data.processed_path.split(/[\/\\]/).pop();
+                                window.location.href = `/download_video/${filename}`;
+                            };
+                            
+                            updateLogs();
+                        })
+                        .catch(error => {
+                            console.error('Error processing video:', error);
+                            processingElement.classList.add('hidden');
+                        });
+                    }
+                });
+            }
         });
 
-        // Drag and drop functionality
-        function setupDropZone(dropZone, inputElement, previewElement, processingElement) {
+        // Fix drag and drop functionality
+        function setupDropZone(dropZone, inputElement, processingFunction) {
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 dropZone.classList.add('dragover');
@@ -487,15 +605,16 @@
                 const file = e.dataTransfer.files[0];
                 if (file) {
                     inputElement.files = e.dataTransfer.files;
-                    handleFileUpload(file, previewElement, processingElement);
+                    processingFunction(e);
                 }
             });
         }
 
         function handleFileUpload(file, previewElement, processingElement) {
-            const url = URL.createObjectURL(file);
-            
             if (file.type.startsWith('video/')) {
+                // Handle video upload (keep existing code)
+                const url = URL.createObjectURL(file);
+                
                 // Show original video
                 const videoPlayer = document.getElementById('videoPlayer');
                 videoPlayer.src = url;
@@ -542,86 +661,145 @@
                     console.error('Error processing video:', error);
                     processingElement.classList.add('hidden');
                 });
-            } else if (file.type.startsWith('image/')) {
-                // Show original image
-                const photoPreview = document.getElementById('photoPreview');
-                photoPreview.src = url;
-                photoPreview.classList.remove('hidden');
-                
-                // Show buffering spinner
-                const processingElement = document.getElementById('photoProcessing');
-                processingElement.classList.remove('hidden');
-                
-                // Process photo
-                const formData = new FormData();
-                formData.append('photo', file);
-                
-                fetch('/process_photo', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    processingElement.classList.add('hidden');
-                    
-                    // Show processed image - fix for image display
-                    const processedPhoto = document.getElementById('processedPhotoPreview');
-                    if (data.processed_path) {
-                        processedPhoto.src = '/' + data.processed_path.replace(/\\/g, '/');
-                        processedPhoto.classList.remove('hidden');
-                    }
-                    
-                    // Show download button
-                    const downloadButton = document.getElementById('downloadProcessedPhoto');
-                    downloadButton.classList.remove('hidden');
-                    downloadButton.onclick = () => {
-                        // Extract filename from path
-                        const filename = data.processed_path.split(/[\/\\]/).pop();
-                        window.location.href = `/download_photo/${filename}`;
-                    };
-                    
-                    updateLogs();
-                })
-                .catch(error => {
-                    console.error('Error processing photo:', error);
-                    processingElement.classList.add('hidden');
-                });
             }
         }
 
-        // Setup drop zones
-        setupDropZone(
-            document.getElementById('videoDropZone'),
-            document.getElementById('videoInput'),
-            document.getElementById('videoPlayer'),
-            document.getElementById('videoProcessing')
-        );
-
-        setupDropZone(
-            document.getElementById('photoDropZone'),
-            document.getElementById('photoInput'),
-            document.getElementById('photoPreview'),
-            document.getElementById('photoProcessing')
-        );
-
-        // Handle file inputs
-        document.getElementById('videoInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                handleFileUpload(file, document.getElementById('videoPlayer'), document.getElementById('videoProcessing'));
+        // Update the handlePhotoUpload function with better overlay handling
+        function handlePhotoUpload(event) {
+            const file = event.target.files?.[0] || (event.dataTransfer?.files?.[0]);
+            if (!file) return;
+            
+            console.log("Processing photo:", file.name);
+            
+            // Display original photo
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('originalPhoto').src = e.target.result;
+                document.getElementById('originalPhoto').classList.remove('hidden');
+                document.getElementById('photoPlaceholder').classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+            
+            // Get references to UI elements
+            const processingOverlay = document.getElementById('photoProcessing');
+            const progressBar = document.getElementById('photoProgressBar');
+            const processedPhoto = document.getElementById('processedPhoto');
+            const processedPhotoPlaceholder = document.getElementById('processedPhotoPlaceholder');
+            const photoDetectionResult = document.getElementById('photoDetectionResult');
+            
+            // Ensure the overlay is visible and reset progress
+            processingOverlay.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            
+            // Animate progress bar
+            let width = 0;
+            const interval = setInterval(() => {
+                if (width >= 90) {
+                    clearInterval(interval);
+                } else {
+                    width += 5;
+                    progressBar.style.width = width + '%';
+                }
+            }, 100);
+            
+            // Get location information
+            const locationName = document.getElementById('locationName').value;
+            const coordinates = document.getElementById('manualCoordinates').value;
+            let latitude = '', longitude = '';
+            
+            if (coordinates) {
+                const coordsArray = coordinates.split(',');
+                if (coordsArray.length === 2) {
+                    latitude = coordsArray[0].trim();
+                    longitude = coordsArray[1].trim();
+                }
             }
-        });
-
-        document.getElementById('photoInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                handleFileUpload(file, document.getElementById('photoPreview'), document.getElementById('photoProcessing'));
-            }
-        });
-
-        // Update logs every 5 seconds
-        setInterval(updateLogs, 5000);
-        updateLogs(); // Initial update
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('photo', file);
+            formData.append('location', locationName);
+            formData.append('latitude', latitude);
+            formData.append('longitude', longitude);
+            
+            console.log("Sending photo to server with location:", locationName);
+            
+            // Helper function to ensure the processing overlay is hidden
+            const hideProcessingOverlay = () => {
+                console.log("Hiding processing overlay");
+                clearInterval(interval);
+                progressBar.style.width = '100%';
+                
+                // Make sure this gets called regardless of how the function exits
+                setTimeout(() => {
+                    if (processingOverlay) {
+                        processingOverlay.classList.add('hidden');
+                        console.log("Processing overlay hidden");
+                    }
+                }, 500);
+            };
+            
+            // Send to server
+            fetch('/process_photo', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log("Server response received:", response.status);
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Processing complete, data:", data);
+                
+                // Complete progress bar
+                progressBar.style.width = '100%';
+                
+                if (data.success) {
+                    // Display processed photo
+                    const processedPhotoUrl = '/' + data.processed_path + '?t=' + new Date().getTime();
+                    console.log("Setting processed photo URL:", processedPhotoUrl);
+                    
+                    processedPhoto.src = processedPhotoUrl;
+                    processedPhoto.classList.remove('hidden');
+                    processedPhotoPlaceholder.classList.add('hidden');
+                    
+                    // Display detection results
+                    if (data.detection) {
+                        photoDetectionResult.classList.remove('hidden');
+                        photoDetectionResult.innerHTML = `
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 mt-1">
+                                    <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="font-semibold">Detection Results:</h3>
+                                    <ul class="mt-1 list-disc list-inside">
+                                        <li>Object: ${data.detection.class}</li>
+                                        <li>Confidence: ${Math.round(data.detection.confidence * 100)}%</li>
+                                        <li>Location: ${data.detection.location}</li>
+                                        <li>Timestamp: ${data.detection.timestamp}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    console.error("Error in processing:", data.error);
+                    alert('Error processing photo: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error processing photo: ' + error);
+            })
+            .finally(() => {
+                // Always hide the processing overlay, even if there are errors
+                hideProcessingOverlay();
+            });
+        }
 
         // Function to fetch and display detections
         function fetchDetections() {
@@ -675,83 +853,39 @@
                 });
         }
 
-        // Function to update detection status
-        function updateStatus(timestamp, status) {
-            fetch('/update_status', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    timestamp: timestamp,
-                    status: status
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const statusElement = document.querySelector(`#status-${timestamp}`).parentElement.previousElementSibling;
-                    statusElement.className = `badge bg-${status === 'cleaned' ? 'success' : 'warning'} me-2`;
-                    statusElement.innerText = status === 'cleaned' ? 'Cleaned' : 'Pending';
-                }
-            })
-            .catch(error => {
-                console.error('Error updating status:', error);
-            });
-        }
+        // Geolocation functionality
+        document.getElementById('getCurrentLocation').addEventListener('click', function() {
+            const locationStatus = document.getElementById('locationStatus');
+            locationStatus.innerHTML = '<span class="text-blue-600"><i class="fas fa-spinner fa-spin mr-1"></i> Getting location...</span>';
+            
+            if (!navigator.geolocation) {
+                locationStatus.innerHTML = '<span class="text-red-600"><i class="fas fa-exclamation-circle mr-1"></i> Geolocation not supported by your browser</span>';
+                return;
+            }
 
-        // Throttle detections to be logged only once per minute
-        let lastDetectionTime = 0;
-        const DETECTION_THROTTLE_MS = 60000; // 1 minute
-        
-        // Function to process frame with detection throttling
-        function processDetection(detection) {
-            // Add to recent detections immediately
-            const recentDetections = document.getElementById('recentDetections');
-            const detectionItem = document.createElement('div');
-            detectionItem.className = 'detection-card bg-white p-4 rounded-lg shadow-sm';
-            
-            // Similar to updateLogs but for recent detections only
-            const imagePath = detection.image_path ? ('/' + detection.image_path) : '';
-            
-            detectionItem.innerHTML = `
-                <div class="flex items-center">
-                    <div class="w-20 h-20 mr-4 overflow-hidden rounded-lg">
-                        <img src="${imagePath}" class="w-full h-full object-cover" alt="Detection" onerror="this.src='https://via.placeholder.com/150?text=No+Image'">
-                    </div>
-                    <div class="flex-1">
-                        <h3 class="font-semibold text-gray-800">${detection.class}</h3>
-                        <p class="text-sm text-gray-600">Confidence: ${detection.confidence}</p>
-                        <p class="text-xs text-gray-500">Time: ${detection.timestamp}</p>
-                    </div>
-                </div>
-            `;
-            
-            // Only keep the most recent 10 detections in the UI
-            if (recentDetections.children.length >= 10) {
-                recentDetections.removeChild(recentDetections.lastChild);
-            }
-            
-            // Add new detection at the top
-            if (recentDetections.firstChild) {
-                recentDetections.insertBefore(detectionItem, recentDetections.firstChild);
-            } else {
-                recentDetections.innerHTML = '';
-                recentDetections.appendChild(detectionItem);
-            }
-            
-            // Check if we should log this detection (once per minute)
-            const currentTime = Date.now();
-            if (currentTime - lastDetectionTime >= DETECTION_THROTTLE_MS) {
-                lastDetectionTime = currentTime;
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const latitude = position.coords.latitude;
+                const longitude = position.coords.longitude;
                 
-                // This detection should be logged for cleaning
-                detection.forCleaning = true;
-                
-                // Update the logs UI
-                updateLogs();
-            }
-        }
+                document.getElementById('manualCoordinates').value = latitude + ', ' + longitude;
+                locationStatus.innerHTML = '<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i> Location acquired</span>';
+            }, function(error) {
+                console.error('Error getting location:', error);
+                let errorMsg = 'Error getting location';
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMsg = 'Location access denied';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMsg = 'Location information unavailable';
+                        break;
+                    case error.TIMEOUT:
+                        errorMsg = 'Location request timed out';
+                        break;
+                }
+                locationStatus.innerHTML = `<span class="text-red-600"><i class="fas fa-exclamation-circle mr-1"></i> ${errorMsg}</span>`;
+            });
+        });
     </script>
 </body>
 </html> 

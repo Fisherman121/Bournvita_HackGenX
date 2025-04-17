@@ -15,6 +15,12 @@ class Zone {
     this.isActive = true,
   });
 
+  String get zoneName => name;
+  
+  String get locationString => location != null 
+      ? (location!['address'] as String?) ?? 'Unknown Location' 
+      : 'Unknown Location';
+
   factory Zone.fromJson(String id, Map<String, dynamic> json) {
     // Handle cameraIds which could be a list of strings or a single string
     List<String> parseCameraIds() {

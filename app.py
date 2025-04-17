@@ -19,6 +19,10 @@ import base64
 import time
 from flask_cors import CORS
 import flask
+import sqlite3
+from sqlite3 import Error
+import urllib.parse
+import re
 
 # Override torch_safe_load in ultralytics to use weights_only=False
 # Only do this if you fully trust your model file
@@ -96,6 +100,9 @@ CAMERA_ZONES = {
 # Current camera identifier - default to camera_0
 current_camera_id = 'camera_0'
 
+# Add global variable for location override
+current_zone_override = None
+
 def process_frame(frame):
     # Perform detection
     results = yolo_model(frame)
@@ -147,8 +154,12 @@ def process_frame(frame):
                 if mark_for_cleaning:
                     last_cleaning_log_time = current_time
                 
-                # Get zone information for the current camera
-                zone_info = CAMERA_ZONES.get(current_camera_id, {'zone_name': 'Unknown Zone', 'location': 'Unknown Location'})
+                # Get zone information - use override if available
+                global current_zone_override
+                if current_zone_override:
+                    zone_info = current_zone_override
+                else:
+                    zone_info = CAMERA_ZONES.get(current_camera_id, {'zone_name': 'Unknown Zone', 'location': 'Unknown Location'})
                 
                 detection = {
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -161,6 +172,12 @@ def process_frame(frame):
                     'zone_name': zone_info['zone_name'],
                     'location': zone_info['location']
                 }
+                
+                # Extract coordinates if present in the location format "Name (lat, lng)"
+                location_coords_match = re.search(r'\(([-+]?[0-9]*\.?[0-9]+),\s*([-+]?[0-9]*\.?[0-9]+)\)', zone_info['location'])
+                if location_coords_match:
+                    detection['latitude'] = location_coords_match.group(1)
+                    detection['longitude'] = location_coords_match.group(2)
                 
                 current_detection = detection
                 
@@ -203,7 +220,7 @@ def video_feed():
 
 @app.route('/get_detections')
 def get_detections():
-    return jsonify(detection_history)
+    return jsonify(get_detections_from_db())
 
 @app.route('/update_status', methods=['POST'])
 def update_status():
@@ -227,6 +244,21 @@ def process_photo():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
     
+    # Get location information from the request
+    location = request.form.get('location', '')
+    latitude = request.form.get('latitude', '')
+    longitude = request.form.get('longitude', '')
+    
+    # Format coordinates if provided
+    coordinates = ''
+    if latitude and longitude:
+        coordinates = f"{latitude}, {longitude}"
+    
+    # Create location string with coordinates if available
+    location_with_coords = location
+    if coordinates:
+        location_with_coords = f"{location} ({coordinates})"
+    
     if file:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -234,7 +266,22 @@ def process_photo():
         
         # Read and process the image
         frame = cv2.imread(filepath)
+        
+        # Get zone information for the current camera
+        zone_info = CAMERA_ZONES.get(current_camera_id, {'zone_name': 'Unknown Zone', 'location': 'Unknown Location'})
+        
+        # Override location if user provided it
+        if location_with_coords:
+            zone_info['location'] = location_with_coords
+        
+        # Save the camera/zone info to use in process_frame
+        global current_zone_override
+        current_zone_override = zone_info
+        
         frame, detection = process_frame(frame)
+        
+        # Reset the override
+        current_zone_override = None
         
         # Save processed image
         processed_filename = 'processed_' + filename
@@ -245,7 +292,7 @@ def process_photo():
             'success': True,
             'original_path': filepath,
             'processed_path': processed_path,
-            'processed_image': processed_filename
+            'detection': detection
         })
 
 @app.route('/process_video', methods=['POST'])
@@ -424,22 +471,73 @@ def serve_upload(filename):
 @app.route('/view_image/<path:filename>')
 def view_image(filename):
     """Serve any image file from any path."""
-    filepath = os.path.join(os.getcwd(), filename)
-    if os.path.exists(filepath):
-        # Default to image/jpeg, but try to set a more appropriate MIME type if possible
-        mime_types = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif'
-        }
+    print(f"DEBUG: Request to view image: {filename}")
+    
+    # Try multiple possible locations for the image
+    possible_paths = [
+        os.path.join(os.getcwd(), filename),               # Full path as provided
+        os.path.join(UPLOAD_FOLDER, filename),             # In uploads folder
+        os.path.join(UPLOAD_FOLDER, os.path.basename(filename)),  # Just filename in uploads
+        os.path.join(DETECTION_FOLDER, filename),          # In detections folder
+        os.path.join(DETECTION_FOLDER, os.path.basename(filename)),  # Just filename in detections
+        filename,                                          # Direct path as provided
+    ]
+    
+    print(f"DEBUG: Checking {len(possible_paths)} possible file paths:")
+    
+    # Find the first path that exists and is a file
+    for idx, filepath in enumerate(possible_paths):
+        print(f"DEBUG: Path {idx}: {filepath} - {'EXISTS' if os.path.exists(filepath) else 'NOT FOUND'}")
+        if os.path.exists(filepath) and os.path.isfile(filepath):
+            print(f"DEBUG: Found image at: {filepath}")
+            
+            # Default to image/jpeg, but try to set a more appropriate MIME type if possible
+            mime_types = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'gif': 'image/gif'
+            }
+            
+            # Get file extension
+            file_ext = filepath.rsplit('.', 1)[1].lower() if '.' in filepath else 'jpg'
+            mimetype = mime_types.get(file_ext, 'image/jpeg')
+            
+            return send_file(filepath, mimetype=mimetype)
+    
+    # If we've checked all paths and found nothing, look for any image file with a similar name
+    image_basename = os.path.basename(filename)
+    name_part = os.path.splitext(image_basename)[0]  # Get the name without extension
+    
+    print(f"DEBUG: Looking for any file containing the name part: {name_part}")
+    
+    for folder in [UPLOAD_FOLDER, DETECTION_FOLDER]:
+        if os.path.exists(folder):
+            for file in os.listdir(folder):
+                if name_part in file and file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                    filepath = os.path.join(folder, file)
+                    print(f"DEBUG: Found similar image: {filepath}")
+                    file_ext = filepath.rsplit('.', 1)[1].lower()
+                    mimetype = mime_types.get(file_ext, 'image/jpeg')
+                    return send_file(filepath, mimetype=mimetype)
+    
+    # If still no image found, serve a placeholder image instead of 404
+    print(f"DEBUG: Image not found in any location, serving placeholder instead")
+    placeholder_path = os.path.join('static', 'images', 'placeholder-image.jpg')
+    
+    # Ensure placeholder exists
+    if not os.path.exists(placeholder_path):
+        # Create a basic placeholder image
+        placeholder_dir = os.path.join('static', 'images')
+        os.makedirs(placeholder_dir, exist_ok=True)
         
-        # Get file extension
-        file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'jpg'
-        mimetype = mime_types.get(file_ext, 'image/jpeg')
+        placeholder = np.zeros((300, 300, 3), dtype=np.uint8)
+        placeholder[:] = (200, 200, 200)  # Gray background
+        cv2.putText(placeholder, "No Image", (75, 150), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        cv2.imwrite(placeholder_path, placeholder)
         
-        return send_file(filepath, mimetype=mimetype)
-    return jsonify({'error': 'File not found'}), 404
+    return send_file(placeholder_path, mimetype='image/jpeg')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -575,27 +673,15 @@ def upload_report():
 @app.route('/mobile/get_detections')
 def mobile_get_detections():
     """API endpoint for mobile app to fetch detection history."""
-    # Only return detections marked for cleaning
-    cleaning_detections = [d for d in detection_history if d.get('forCleaning', False)]
+    # Get detections from database
+    all_detections = get_detections_from_db()
     
-    # Format the response for mobile app
-    formatted_detections = []
-    for detection in cleaning_detections:
-        # Create a copy to avoid modifying the original
-        detection_copy = detection.copy()
-        
-        # Add full URL for image path
-        if 'image_path' in detection_copy:
-            # Get host URL from request
-            host_url = request.host_url.rstrip('/')
-            image_filename = os.path.basename(detection_copy['image_path'])
-            detection_copy['image_url'] = f"{host_url}/view_image/{detection_copy['image_path']}"
-        
-        formatted_detections.append(detection_copy)
+    # Only return detections marked for cleaning
+    cleaning_detections = [d for d in all_detections if d.get('for_cleaning', 1) == 1]
     
     return jsonify({
         'success': True,
-        'detections': formatted_detections
+        'detections': cleaning_detections
     })
 
 @app.route('/mobile/update_status', methods=['POST'])
@@ -607,16 +693,13 @@ def mobile_update_status():
     
     timestamp = data.get('timestamp')
     status = data.get('status')
+    cleaned_by = data.get('cleanedBy')
+    notes = data.get('notes')
     
-    # Find and update the detection
-    updated = False
-    for detection in detection_history:
-        if detection['timestamp'] == timestamp:
-            detection['status'] = status
-            updated = True
-            break
+    # Update in database
+    success = update_detection_status(timestamp, status, cleaned_by, notes)
     
-    return jsonify({'success': updated})
+    return jsonify({'success': success})
 
 @app.route('/mobile/get_zones')
 def mobile_get_zones():
@@ -902,6 +985,471 @@ def restart():
         'detection_count': len(detection_history),
         'placeholder_created': os.path.exists(placeholder_path)
     })
+
+# Initialize SQLite database
+def init_db():
+    """Initialize the SQLite database and create tables if they don't exist"""
+    conn = None
+    try:
+        conn = sqlite3.connect('detections.db')
+        cursor = conn.cursor()
+        
+        # Create detections table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS detections (
+            timestamp TEXT PRIMARY KEY,
+            class TEXT,
+            confidence REAL,
+            status TEXT DEFAULT 'pending',
+            image_path TEXT,
+            for_cleaning INTEGER DEFAULT 1,
+            camera_id TEXT,
+            zone_name TEXT,
+            location TEXT,
+            cleaned_by TEXT,
+            cleaned_at TEXT,
+            notes TEXT,
+            created_at TEXT
+        )
+        ''')
+        
+        conn.commit()
+        return True
+    except Error as e:
+        print(f"Error initializing database: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+# Initialize database on startup
+init_db()
+
+# Helper functions for database operations
+def get_db_connection():
+    """Get a connection to the SQLite database"""
+    conn = sqlite3.connect('detections.db')
+    conn.row_factory = sqlite3.Row  # This enables column access by name
+    return conn
+
+def save_detection_to_db(detection_data):
+    """Save a detection to the database"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+        INSERT OR REPLACE INTO detections (
+            timestamp, class, confidence, status, image_path, 
+            for_cleaning, camera_id, zone_name, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            detection_data.get('timestamp', datetime.now().isoformat()),
+            detection_data.get('class', 'unknown'),
+            detection_data.get('confidence', 0.0),
+            detection_data.get('status', 'pending'),
+            detection_data.get('image_path', ''),
+            detection_data.get('forCleaning', 1),
+            detection_data.get('camera_id', 'unknown'),
+            detection_data.get('zone_name', 'Unknown Zone'),
+            detection_data.get('location', 'Unknown Location'),
+            datetime.now().isoformat()
+        ))
+        conn.commit()
+        return True
+    except Error as e:
+        print(f"Error saving detection to database: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_detections_from_db():
+    """Get all detections from the database"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM detections ORDER BY timestamp DESC')
+        rows = cursor.fetchall()
+        
+        # Convert rows to dictionaries
+        detections = []
+        for row in rows:
+            detection = dict(row)
+            # Add image_url for Flutter app
+            if detection['image_path']:
+                host_url = request.host_url.rstrip('/')
+                detection['image_url'] = f"{host_url}/view_image/{detection['image_path']}"
+            detections.append(detection)
+        
+        return detections
+    except Error as e:
+        print(f"Error retrieving detections from database: {e}")
+        return []
+    finally:
+        conn.close()
+
+def update_detection_status(timestamp, status, cleaned_by=None, notes=None):
+    """Update the status of a detection"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        
+        if status == 'cleaned':
+            # If marking as cleaned, update cleaned_by, cleaned_at and notes
+            cursor.execute('''
+            UPDATE detections 
+            SET status = ?, cleaned_by = ?, cleaned_at = ?, notes = ?
+            WHERE timestamp = ?
+            ''', (status, cleaned_by, datetime.now().isoformat(), notes, timestamp))
+        else:
+            # Just update the status
+            cursor.execute('UPDATE detections SET status = ? WHERE timestamp = ?', 
+                           (status, timestamp))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    except Error as e:
+        print(f"Error updating detection status: {e}")
+        return False
+    finally:
+        conn.close()
+
+# New Flask API endpoints for the mobile app
+@app.route('/api/detections', methods=['GET'])
+def api_get_detections():
+    """API endpoint to get all detections"""
+    detections = get_detections_from_db()
+    return jsonify({
+        'success': True,
+        'detections': detections
+    })
+
+@app.route('/api/detections', methods=['POST'])
+def api_add_detection():
+    """API endpoint to add a new detection"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        # Add to detection_history for backward compatibility
+        detection_history.append(data)
+        
+        # Save to database
+        success = save_detection_to_db(data)
+        
+        return jsonify({
+            'success': success,
+            'message': 'Detection added successfully' if success else 'Failed to add detection'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/detections/<timestamp>', methods=['PUT', 'PATCH'])
+def api_update_detection(timestamp):
+    """API endpoint to update a detection status"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        status = data.get('status')
+        if not status:
+            return jsonify({'success': False, 'error': 'Status field is required'}), 400
+        
+        # Update in detection_history for backward compatibility
+        for detection in detection_history:
+            if detection.get('timestamp') == timestamp:
+                detection['status'] = status
+                if status == 'cleaned':
+                    detection['cleaned_by'] = data.get('cleanedBy')
+                    detection['cleaned_at'] = datetime.now().isoformat()
+                    detection['notes'] = data.get('notes')
+                break
+        
+        # Update in database
+        success = update_detection_status(
+            timestamp, 
+            status, 
+            data.get('cleanedBy'), 
+            data.get('notes')
+        )
+        
+        return jsonify({
+            'success': success,
+            'message': 'Detection updated successfully' if success else 'Failed to update detection'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/sample_data')
+def add_sample_data():
+    """Add sample detections to the database"""
+    # Sample detections data
+    sample_detections = [
+        {
+            'timestamp': datetime.now().isoformat(),
+            'class': 'Plastic Bottle',
+            'confidence': 0.95,
+            'status': 'pending',
+            'image_path': 'uploads/sample_bottle.jpg',
+            'forCleaning': True,
+            'camera_id': 'cam-1',
+            'zone_name': 'Zone A',
+            'location': 'Entrance'
+        },
+        {
+            'timestamp': (datetime.now() - timedelta(hours=2)).isoformat(),
+            'class': 'Garbage Bag',
+            'confidence': 0.88,
+            'status': 'pending',
+            'image_path': 'uploads/sample_bag.jpg',
+            'forCleaning': True,
+            'camera_id': 'cam-2',
+            'zone_name': 'Zone B',
+            'location': 'Parking Lot'
+        },
+        {
+            'timestamp': (datetime.now() - timedelta(days=1)).isoformat(),
+            'class': 'Paper Cup',
+            'confidence': 0.77,
+            'status': 'cleaned',
+            'image_path': 'uploads/sample_cup.jpg',
+            'forCleaning': True,
+            'camera_id': 'cam-3',
+            'zone_name': 'Zone C',
+            'location': 'Cafeteria',
+            'cleaned_by': 'Maintenance Staff',
+            'cleaned_at': (datetime.now() - timedelta(hours=6)).isoformat(),
+            'notes': 'Found near the recycle bin'
+        }
+    ]
+    
+    # Add sample detections to the database
+    for detection in sample_detections:
+        save_detection_to_db(detection)
+        
+    # Also add to detection_history for backward compatibility
+    detection_history.extend(sample_detections)
+    
+    return jsonify({
+        'success': True,
+        'message': 'Sample detections added to database',
+        'count': len(sample_detections)
+    })
+
+@app.route('/get_image_base64/<path:filename>')
+def get_image_base64(filename):
+    """
+    Endpoint to get an image as base64 encoded string. This is useful for mobile apps
+    where direct image loading may not work consistently.
+    
+    Args:
+        filename: Path to the image file, relative to the server root
+        
+    Returns:
+        JSON with the base64 encoded image data
+    """
+    try:
+        # Try to find the file in various locations
+        possible_paths = [
+            filename,  # As provided
+            os.path.join(UPLOAD_FOLDER, filename),  # In uploads folder
+            os.path.join(DETECTION_FOLDER, filename),  # In detections folder
+            os.path.join('static', 'images', filename),  # In static/images
+        ]
+        
+        # Find the first path that exists
+        full_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                full_path = path
+                break
+        
+        # If none of the paths exist, use a placeholder
+        if full_path is None:
+            full_path = os.path.join('static', 'images', 'placeholder-image.jpg')
+            print(f"Image not found at any location, using placeholder: {full_path}")
+        
+        # Check if file exists and is readable
+        if not os.path.isfile(full_path):
+            return jsonify({
+                'success': False, 
+                'error': f'File not found: {full_path}',
+                'possible_paths': possible_paths
+            }), 404
+            
+        # Read the file and encode as base64
+        with open(full_path, 'rb') as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+        return jsonify({
+            'success': True,
+            'image_data': encoded_image,
+            'mime_type': 'image/jpeg',  # Assuming JPEG, could be determined from file extension
+            'path_used': full_path
+        })
+        
+    except Exception as e:
+        print(f"Error serving base64 image: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# Direct uploads access - simple endpoint to serve any file in the uploads folder
+@app.route('/uploads-direct/<filename>')
+def uploads_direct(filename):
+    """Serve a file directly from the uploads folder, no path resolving needed."""
+    print(f"DEBUG: Direct uploads access request for: {filename}")
+    
+    # Look for exact filename match in uploads folder
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.exists(filepath) and os.path.isfile(filepath):
+        print(f"DEBUG: Serving direct file from uploads: {filepath}")
+        return send_file(filepath)
+    
+    # No exact match, look for similar filename
+    if os.path.exists(UPLOAD_FOLDER):
+        for file in os.listdir(UPLOAD_FOLDER):
+            # Check if this file contains the requested filename (partial match)
+            if filename in file and file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                filepath = os.path.join(UPLOAD_FOLDER, file)
+                print(f"DEBUG: Serving similar file from uploads: {filepath}")
+                return send_file(filepath)
+    
+    # If no image found, serve placeholder
+    print(f"DEBUG: No file found in uploads for {filename}, serving placeholder")
+    placeholder_path = os.path.join('static', 'images', 'placeholder-image.jpg')
+    
+    # Ensure placeholder exists
+    if not os.path.exists(placeholder_path):
+        placeholder_dir = os.path.join('static', 'images')
+        os.makedirs(placeholder_dir, exist_ok=True)
+        
+        placeholder = np.zeros((300, 300, 3), dtype=np.uint8)
+        placeholder[:] = (200, 200, 200)  # Gray background
+        cv2.putText(placeholder, "File Not Found", (60, 130), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+        cv2.putText(placeholder, filename[:20], (60, 170), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        cv2.imwrite(placeholder_path, placeholder)
+        
+    return send_file(placeholder_path)
+
+# Simple endpoint that serves images by timestamp
+@app.route('/image-by-timestamp/<timestamp>')
+def image_by_timestamp(timestamp):
+    """Serve an image by its detection timestamp to avoid URL encoding issues."""
+    print(f"DEBUG: Request for image by timestamp: {timestamp}")
+    
+    # Find the detection by timestamp
+    detection = None
+    for d in detection_history:
+        if d.get('timestamp', '') == timestamp:
+            detection = d
+            break
+    
+    # If found, get the image path and serve it
+    if detection and 'image_path' in detection:
+        image_path = detection['image_path']
+        print(f"DEBUG: Found image path for timestamp {timestamp}: {image_path}")
+        
+        # Try to find the file
+        possible_paths = [
+            image_path,
+            os.path.join(os.getcwd(), image_path),
+            os.path.join(UPLOAD_FOLDER, os.path.basename(image_path))
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path) and os.path.isfile(path):
+                print(f"DEBUG: Serving image from path: {path}")
+                return send_file(path)
+    
+    # Try to find any image with the timestamp in its name
+    for folder in [UPLOAD_FOLDER, DETECTION_FOLDER]:
+        if os.path.exists(folder):
+            for file in os.listdir(folder):
+                # Replace spaces and colons in the timestamp for comparison
+                safe_timestamp = timestamp.replace(' ', '_').replace(':', '_')
+                if safe_timestamp in file and file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                    filepath = os.path.join(folder, file)
+                    print(f"DEBUG: Found image with matching timestamp: {filepath}")
+                    return send_file(filepath)
+    
+    # If no image found, create and serve a custom placeholder
+    print(f"DEBUG: No image found for timestamp {timestamp}, creating custom placeholder")
+    
+    # Create a custom placeholder with timestamp information
+    placeholder_dir = os.path.join('static', 'images')
+    os.makedirs(placeholder_dir, exist_ok=True)
+    placeholder_path = os.path.join(placeholder_dir, f'placeholder-{timestamp}.jpg')
+    
+    placeholder = np.zeros((300, 300, 3), dtype=np.uint8)
+    placeholder[:] = (200, 200, 200)  # Gray background
+    
+    # Add text with timestamp
+    cv2.putText(placeholder, "Image Not Found", (50, 100), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+    cv2.putText(placeholder, timestamp, (50, 150), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                
+    cv2.imwrite(placeholder_path, placeholder)
+    return send_file(placeholder_path, mimetype='image/jpeg')
+
+# Fix URL encoding issues with spaces in filenames
+@app.route('/image-direct/<path:filename>')
+def image_direct(filename):
+    """Serve an image directly, handling URL encoding issues."""
+    print(f"DEBUG: Image direct access request: {filename}")
+    
+    # Normalize the filename to handle URL encoding issues
+    # Replace URL-encoded spaces (%20) with actual spaces
+    decoded_filename = urllib.parse.unquote(filename)
+    print(f"DEBUG: Decoded filename: {decoded_filename}")
+    
+    # First look in uploads folder with original and decoded filename
+    for name in [filename, decoded_filename]:
+        # Try uploads folder
+        filepath = os.path.join(UPLOAD_FOLDER, name)
+        if os.path.exists(filepath) and os.path.isfile(filepath):
+            print(f"DEBUG: Serving direct image from uploads: {filepath}")
+            return send_file(filepath)
+        
+        # Try full path
+        if os.path.exists(name) and os.path.isfile(name):
+            print(f"DEBUG: Serving direct image from full path: {name}")
+            return send_file(name)
+    
+    # If no exact match, try to list the uploads folder and find a similar filename
+    if os.path.exists(UPLOAD_FOLDER):
+        for file in os.listdir(UPLOAD_FOLDER):
+            # Check if the file names are similar (ignoring spaces/underscores/etc)
+            clean_file = file.replace(' ', '').replace('_', '').lower()
+            clean_filename = filename.replace(' ', '').replace('_', '').lower()
+            clean_decoded = decoded_filename.replace(' ', '').replace('_', '').lower()
+            
+            if (clean_file in clean_filename or clean_filename in clean_file or
+                clean_file in clean_decoded or clean_decoded in clean_file):
+                filepath = os.path.join(UPLOAD_FOLDER, file)
+                print(f"DEBUG: Found similar file (ignoring spaces/underscores): {filepath}")
+                return send_file(filepath)
+    
+    # If no image found, create and serve a custom placeholder
+    print(f"DEBUG: No image found for direct access, creating placeholder")
+    placeholder_dir = os.path.join('static', 'images')
+    os.makedirs(placeholder_dir, exist_ok=True)
+    placeholder_path = os.path.join(placeholder_dir, f'placeholder-image-direct.jpg')
+    
+    placeholder = np.zeros((300, 300, 3), dtype=np.uint8)
+    placeholder[:] = (200, 200, 200)  # Gray background
+    cv2.putText(placeholder, "File Not Found", (60, 130), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+    cv2.putText(placeholder, filename[:20], (60, 170), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+    cv2.imwrite(placeholder_path, placeholder)
+    
+    return send_file(placeholder_path, mimetype='image/jpeg')
 
 if __name__ == '__main__':
     # Listen on all interfaces (important for mobile access)

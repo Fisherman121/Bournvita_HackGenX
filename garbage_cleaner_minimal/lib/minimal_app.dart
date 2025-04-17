@@ -4,6 +4,8 @@ import 'services/local_storage.dart';
 import 'services/test_data_service.dart';
 import 'services/api_service.dart';
 import 'utils/config.dart';
+import 'providers/theme_provider.dart';
+import 'package:provider/provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +16,12 @@ void main() async {
   // Add test data to local storage
   await TestDataService.addTestData();
   
-  runApp(const MinimalApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const MinimalApp(),
+    ),
+  );
 }
 
 class MinimalApp extends StatelessWidget {
@@ -22,13 +29,28 @@ class MinimalApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: Config.appName,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        useMaterial3: true,
-      ),
-      home: const DetectionListPage(),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          title: 'Garbage Cleaner Mini',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.green,
+              brightness: Brightness.light,
+            ),
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.green,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          themeMode: themeProvider.themeMode,
+          home: const DetectionListPage(),
+        );
+      },
     );
   }
 }
@@ -186,10 +208,33 @@ class _DetectionListPageState extends State<DetectionListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Garbage Detection Viewer'),
+        title: Text('Garbage Cleaner Mini'),
+        backgroundColor: themeProvider.themeMode == ThemeMode.dark 
+            ? Colors.grey[900] 
+            : Colors.green[700],
+        foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(
+              themeProvider.themeMode == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: () {
+              themeProvider.setThemeMode(
+                themeProvider.themeMode == ThemeMode.dark
+                    ? ThemeMode.light
+                    : ThemeMode.dark,
+              );
+            },
+            tooltip: 'Toggle theme',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadDetections,
@@ -232,7 +277,9 @@ class _DetectionListPageState extends State<DetectionListPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(8.0),
-            color: Colors.grey.shade200,
+            color: themeProvider.themeMode == ThemeMode.dark 
+                ? Colors.grey[800] 
+                : Colors.grey.shade200,
             child: Row(
               children: [
                 Icon(
@@ -256,12 +303,20 @@ class _DetectionListPageState extends State<DetectionListPage> {
                     style: TextStyle(
                       color: _syncStatus.contains('Error') || _syncStatus.contains('unreachable')
                           ? Colors.red
-                          : null,
+                          : themeProvider.themeMode == ThemeMode.dark 
+                              ? Colors.white 
+                              : null,
                     ),
                   ),
                 ),
-                Text('Server: ${_serverUrl.split('://').last}', 
-                  style: const TextStyle(fontSize: 12),
+                Text(
+                  'Server: ${_serverUrl.split('://').last}', 
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: themeProvider.themeMode == ThemeMode.dark 
+                        ? Colors.white70 
+                        : null,
+                  ),
                 ),
               ],
             ),
@@ -359,7 +414,47 @@ class _DetectionListPageState extends State<DetectionListPage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _syncWithServer,
         tooltip: 'Sync with Server',
+        backgroundColor: themeProvider.themeMode == ThemeMode.dark 
+            ? Colors.green[700] 
+            : null,
         child: const Icon(Icons.sync),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        color: themeProvider.themeMode == ThemeMode.dark 
+            ? Colors.grey[900] 
+            : Colors.green[700],
+        height: 56,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              icon: Icon(
+                themeProvider.themeMode == ThemeMode.dark 
+                    ? Icons.light_mode 
+                    : Icons.dark_mode,
+                color: Colors.white,
+              ),
+              onPressed: () {
+                themeProvider.setThemeMode(
+                  themeProvider.themeMode == ThemeMode.dark
+                      ? ThemeMode.light
+                      : ThemeMode.dark,
+                );
+              },
+              tooltip: 'Toggle theme',
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: _loadDetections,
+              tooltip: 'Refresh local',
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings, color: Colors.white),
+              onPressed: _updateServerUrl,
+              tooltip: 'Server settings',
+            ),
+          ],
+        ),
       ),
     );
   }
