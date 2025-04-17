@@ -9,6 +9,7 @@
 - **Multi-user Authentication**: Supports different user roles with customized portals
 - **Real-time Analytics**: Dashboard with statistics and insights on garbage detection
 - **Task Management**: System for assigning and tracking cleaning tasks
+- **Manual Reporting Website**: Simple HTML/CSS/JS website for reporting garbage in areas without cameras
 
 ## 🛠️ Technologies Used
 
@@ -16,6 +17,7 @@
 - React.js with Next.js for web interface
 - Material UI for component styling
 - Flutter (for mobile application)
+- HTML/CSS/JavaScript for standalone reporting website
 
 ### Backend
 - Flask (Python web framework)
@@ -66,6 +68,18 @@ flutter pub get
 flutter run
 ```
 
+### Reporting Website Setup
+```bash
+# Navigate to the reporting website directory
+cd ReportingWebsite
+
+# Open the website in a browser
+# For local development, you can use any static file server
+# Example using Python's built-in HTTP server:
+python -m http.server 8080
+# Then open http://localhost:8080 in your browser
+```
+
 ## How the System Works
 
 ### Website Architecture
@@ -98,6 +112,13 @@ The web application follows a client-server architecture:
    - All portals feature automatic data refreshing every 60 seconds
    - Instant notifications for task assignments and status changes
    - Interactive maps showing detection locations and hotspots
+
+6. **Reporting Website**:
+   - Standalone web application for manual garbage reporting
+   - Allows users to report garbage in areas without camera coverage
+   - Uses geolocation to automatically capture location information
+   - Supports photo uploads and detailed reporting
+   - Can be integrated with the main system via API
 
 ### Backend System
 The backend is built on Flask and handles:
@@ -141,6 +162,12 @@ The backend is built on Flask and handles:
 ├── garbage-cleaner-pwa/           # Progressive Web App
 │   ├── src/                       # React components
 │   ├── public/                    # Static assets
+├── ReportingWebsite/              # Simple HTML/CSS/JS website for manual reporting
+│   ├── css/                       # Stylesheet files
+│   ├── js/                        # JavaScript files
+│   ├── images/                    # Image assets
+│   ├── uploads/                   # Directory for storing uploaded images
+│   └── index.html                 # Main HTML file
 ├── app.py                         # Flask application (main backend)
 ├── detector/                      # Core detection algorithms
 ├── database/                      # Database models and connections
@@ -163,6 +190,7 @@ The backend is built on Flask and handles:
 - [ ] Improve detection accuracy in various lighting conditions
 - [ ] Add geofencing capabilities for location-based alerts
 - [ ] Implement predictive analytics for optimizing cleanup routes
+- [ ] Integrate the reporting website with the main backend system
 
 ## 📄 License
 
